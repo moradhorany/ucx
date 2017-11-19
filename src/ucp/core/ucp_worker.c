@@ -23,6 +23,7 @@
 #include <ucs/datastruct/mpool.inl>
 #include <ucs/datastruct/queue.h>
 #include <ucs/type/cpu_set.h>
+#include <ucs/debug/tune.h>
 #include <ucs/sys/string.h>
 #include <ucs/arch/atomic.h>
 #include <sys/poll.h>
@@ -1735,6 +1736,12 @@ ucs_status_t ucp_worker_create(ucp_context_h context,
 
     /* Select atomic resources */
     ucp_worker_init_atomic_tls(worker);
+
+#if ENABLE_TUNING
+    pthread_mutex_lock(&ucs_context_list_lock);
+    ucs_list_insert_after(&context->tune_workers, &worker->tune_list);
+    pthread_mutex_unlock(&ucs_context_list_lock);
+#endif
 
     /* At this point all UCT memory domains and interfaces are already created
      * so warn about unused environment variables.

@@ -358,6 +358,7 @@ AC_CONFIG_FILES([
                  src/ucp/api/ucp_version.h
                  src/ucp/core/ucp_version.c
                  src/tools/info/Makefile
+                 src/tools/tune/Makefile
                  src/tools/profile/Makefile
                  test/apps/Makefile
                  test/apps/sockaddr/Makefile

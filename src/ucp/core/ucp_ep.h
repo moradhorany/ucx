@@ -293,12 +293,16 @@ typedef struct ucp_ep {
     /* TODO allocate ep dynamically according to number of lanes */
     uct_ep_h                      uct_eps[UCP_MAX_LANES]; /* Transports for every lane */
 
-#if ENABLE_DEBUG_DATA
+#if (ENABLE_DEBUG_DATA || ENABLE_TUNING)
     char                          peer_name[UCP_WORKER_NAME_MAX];
 #endif
 
     UCS_STATS_NODE_DECLARE(stats);
 
+#if ENABLE_TUNING
+    /* For run-time tuning, keep a list of all the instances */
+    ucs_list_link_t               tune_list;
+#endif
 } ucp_ep_t;
 
 

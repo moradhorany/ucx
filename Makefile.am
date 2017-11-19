@@ -33,6 +33,7 @@ SUBDIRS = \
 	src/ucp \
 	src/tools/info \
 	src/tools/perf \
+	src/tools/tune \
 	src/tools/profile \
 	test/apps \
 	test/examples

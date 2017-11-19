@@ -228,6 +228,9 @@ typedef struct ucp_worker {
     ucp_tag_match_t               tm;            /* Tag-matching queues and offload info */
     uint64_t                      am_message_id; /* For matching long am's */
     ucp_ep_h                      mem_type_ep[UCS_MEMORY_TYPE_LAST];/* memory type eps */
+#if ENABLE_TUNING
+    ucs_list_link_t               tune_list;     /* For run-time tuning, keep a list of all the instances */
+#endif
 
     UCS_STATS_NODE_DECLARE(stats);
     UCS_STATS_NODE_DECLARE(tm_offload_stats);

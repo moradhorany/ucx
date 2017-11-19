@@ -81,6 +81,7 @@ noinst_HEADERS = \
 	debug/assert.h \
 	debug/debug.h \
 	debug/log.h \
+	debug/tune.h \
 	debug/memtrack.h \
 	memory/numa.h \
 	memory/rcache_int.h \
@@ -126,6 +127,7 @@ libucs_la_SOURCES = \
 	debug/assert.c \
 	debug/debug.c \
 	debug/log.c \
+	debug/tune.c \
 	debug/memtrack.c \
 	memory/memory_type.c \
 	memory/memtype_cache.c \
@@ -158,6 +160,9 @@ bin_PROGRAMS            += ucs_stats_parser
 ucs_stats_parser_CPPFLAGS = $(BASE_CPPFLAGS)
 ucs_stats_parser_LDADD   = libucs.la
 ucs_stats_parser_SOURCES = stats/stats_parser.c
+if HAVE_TUNING
+ucs_stats_parser_LDADD  += $(top_builddir)/src/ucp/libucp.la
+endif
 endif
 
 all-local: $(objdir)/$(modulesubdir)

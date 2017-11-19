@@ -18,6 +18,7 @@
 #include <ucs/algorithm/crc.h>
 #include <ucs/datastruct/mpool.inl>
 #include <ucs/datastruct/queue.h>
+#include <ucs/debug/tune.h>
 #include <ucs/debug/log.h>
 #include <ucs/debug/debug.h>
 #include <ucs/sys/compiler.h>
@@ -49,6 +50,13 @@ static const char * ucp_rndv_modes[] = {
     [UCP_RNDV_MODE_PUT_ZCOPY] = "put_zcopy",
     [UCP_RNDV_MODE_AUTO]      = "auto",
     [UCP_RNDV_MODE_LAST]      = NULL,
+};
+
+uct_memory_type_t ucm_to_uct_mem_type_map[] = {
+    [UCM_MEM_TYPE_CUDA]         = UCT_MD_MEM_TYPE_CUDA,
+    [UCM_MEM_TYPE_CUDA_MANAGED] = UCT_MD_MEM_TYPE_CUDA_MANAGED,
+    [UCM_MEM_TYPE_ROCM]         = UCT_MD_MEM_TYPE_ROCM,
+    [UCM_MEM_TYPE_ROCM_MANAGED] = UCT_MD_MEM_TYPE_ROCM_MANAGED,
 };
 
 static ucs_config_field_t ucp_config_table[] = {
@@ -1398,6 +1406,14 @@ ucs_status_t ucp_init_version(unsigned api_major_version, unsigned api_minor_ver
         ucp_config_release(dfl_config);
     }
 
+#if ENABLE_TUNING
+    pthread_mutex_lock(&ucs_context_list_lock);
+    ucs_list_insert_after(&ucs_context_list, &context->tune_contexts);
+    ucs_list_head_init(&context->tune_workers);
+    pthread_mutex_unlock(&ucs_context_list_lock);
+    ucs_tune_init();
+#endif
+
     ucs_debug("created ucp context %p [%d mds %d tls] features 0x%lx tl bitmap 0x%lx",
               context, context->num_mds, context->num_tls,
               context->config.features, context->tl_bitmap);
@@ -1419,6 +1435,9 @@ err:
 
 void ucp_cleanup(ucp_context_h context)
 {
+#if ENABLE_TUNING
+    ucs_tune_cleanup();
+#endif
     ucp_free_resources(context);
     ucp_free_config(context);
     UCP_THREAD_LOCK_FINALIZE(&context->mt_lock);

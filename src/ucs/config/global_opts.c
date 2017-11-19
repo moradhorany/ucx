@@ -62,7 +62,7 @@ static UCS_CONFIG_DEFINE_ARRAY(signo,
                                sizeof(int),
                                UCS_CONFIG_TYPE_SIGNO);
 
-static ucs_config_field_t ucs_global_opts_table[] = {
+ucs_config_field_t ucs_global_opts_table[] = {
  {"LOG_LEVEL", "warn",
   "UCS logging level. Messages with a level higher or equal to the selected "
   "will be printed.\n"
@@ -220,6 +220,13 @@ static ucs_config_field_t ucs_global_opts_table[] = {
   {"MODULE_LOG_LEVEL", "trace",
    "Logging level for module loader\n",
    ucs_offsetof(ucs_global_opts_t, module_log_level), UCS_CONFIG_TYPE_ENUM(ucs_log_level_names)},
+
+#if ENABLE_TUNING
+  {"TUNING_PATH", "",
+   "Named pipe path to be used for tuning parameters in run-time.\n"
+   "Substitutions: %h: host, %p: pid, %c: cpu, %t: time, %u: user, %e: exe.\n",
+   ucs_offsetof(ucs_global_opts_t, tuning_path), UCS_CONFIG_TYPE_STRING},
+#endif
 
   {"", "", NULL,
    ucs_offsetof(ucs_global_opts_t, arch),
