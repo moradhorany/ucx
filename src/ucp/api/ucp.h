@@ -3130,6 +3130,18 @@ ucs_status_ptr_t ucp_worker_flush_nb(ucp_worker_h worker, unsigned flags,
 
 
 /**
+ * @ingroup UCP_WORKER
+ *
+ * @brief Migrates worker connections across an endpoint
+ *
+ * @param [in] worker        UCP worker.
+ *
+ * @return Error code as defined by @ref ucs_status_t
+ */
+ucs_status_t ucp_worker_migrate(ucp_worker_h worker, ucp_ep_h target);
+
+
+/**
  * @example ucp_hello_world.c
  * UCP hello world client / server example utility.
  */

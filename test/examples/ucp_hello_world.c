@@ -53,6 +53,13 @@
 #include <time.h>
 #include <signal.h>  /* raise */
 
+#include <mpi.h>
+#define S2S1 2
+#define S1C 1
+#define CLIENT 0
+#define S1 1
+#define S2 2
+
 struct msg {
     uint64_t        data_len;
 };
@@ -73,15 +80,16 @@ static struct err_handling {
 } err_handling_opt;
 
 static ucs_status_t client_status = UCS_OK;
-static uint16_t server_port = 13337;
 static long test_string_length = 16;
 static const ucp_tag_t tag  = 0x1337a880u;
 static const ucp_tag_t tag_mask = -1;
 static ucp_address_t *local_addr;
 static ucp_address_t *peer_addr;
+static ucp_address_t *server2_addr;
 
 static size_t local_addr_len;
 static size_t peer_addr_len;
+static size_t server2_addr_len;
 
 static int parse_cmd(int argc, char * const argv[], char **server_name);
 
@@ -188,8 +196,86 @@ static int run_ucx_client(ucp_worker_h ucp_worker)
     ep_params.address         = peer_addr;
     ep_params.err_mode        = err_handling_opt.ucp_err_mode;
 
+    fprintf(stderr, "in ucx client, about to ep_create\n");
     status = ucp_ep_create(ucp_worker, &ep_params, &server_ep);
     CHKERR_JUMP(status != UCS_OK, "ucp_ep_create\n", err);
+    fprintf(stderr, "in ucx client, ep created\n");
+
+    msg_len = sizeof(*msg) + local_addr_len;
+    msg = calloc(1, msg_len);
+    if (!msg) {
+        goto err_ep;
+    }
+
+    msg->data_len = local_addr_len;
+    memcpy(msg->data, local_addr, local_addr_len);
+
+    fprintf(stderr," in run_ucx_client, about to send_nb\n");
+    request = ucp_tag_send_nb(server_ep, msg, msg_len,
+            ucp_dt_make_contig(1), tag,
+            send_handle);
+    if (UCS_PTR_IS_ERR(request)) {
+        fprintf(stderr, "unable to send UCX address message\n");
+        free(msg);
+        goto err_ep;
+    } else if (UCS_PTR_STATUS(request) != UCS_OK) {
+        fprintf(stderr, "UCX address message was scheduled for send\n");
+        wait(ucp_worker, request);
+        request->completed = 0; /* Reset request state before recycling it */
+        ucp_request_release(request);
+    }
+    fprintf(stderr," AFTER send_nb in client\n");
+
+    free (msg);
+
+    /* Receive test string from server */
+    do {
+        /* Following blocked methods used to polling internal file descriptor
+         * to make CPU idle and don't spin loop
+         */
+        if (ucp_test_mode == TEST_MODE_WAIT) {
+            /* Polling incoming events*/
+            status = ucp_worker_wait(ucp_worker);
+            if (status != UCS_OK) {
+                goto err_ep;
+            }
+        } else if (ucp_test_mode == TEST_MODE_EVENTFD) {
+            status = test_poll_wait(ucp_worker);
+            if (status != UCS_OK) {
+                goto err_ep;
+            }
+        }
+
+        /* Progressing before probe to update the state */
+        ucp_worker_progress(ucp_worker);
+
+        /* Probing incoming events in non-block mode */
+        msg_tag = ucp_tag_probe_nb(ucp_worker, tag, tag_mask, 1, &info_tag);
+    } while (msg_tag == NULL);
+    msg = malloc(info_tag.length);
+    if (!msg) {
+        fprintf(stderr, "unable to allocate memory\n");
+        goto err_ep;
+    }
+
+    fprintf(stderr,"client probe has a message, receiving it\n");
+    request = ucp_tag_msg_recv_nb(ucp_worker, msg, info_tag.length,
+            ucp_dt_make_contig(1), msg_tag,
+            recv_handle);
+
+    if (UCS_PTR_IS_ERR(request)) {
+        fprintf(stderr, "unable to receive UCX data message (%u)\n",
+                UCS_PTR_STATUS(request));
+        free(msg);
+        goto err_ep;
+    } else {
+        wait(ucp_worker, request);
+        request->completed = 0;
+        ucp_request_release(request);
+        printf("UCX data message was received\n");
+    }
+
+    fprintf(stderr,"\n\n----- CLIENT AWAITS MIGRATION! ----\n\n");
 
     msg_len = sizeof(*msg) + local_addr_len;
     msg = calloc(1, msg_len);
@@ -303,7 +389,7 @@ static ucs_status_t flush_ep(ucp_worker_h worker, ucp_ep_h ep)
     }
 }
 
-static int run_ucx_server(ucp_worker_h ucp_worker)
+static int run_ucx_server(ucp_worker_h ucp_worker, int rank)
 {
     ucp_tag_recv_info_t info_tag;
     ucp_tag_message_h msg_tag;
@@ -395,6 +481,24 @@ static int run_ucx_server(ucp_worker_h ucp_worker)
     ret = 0;
     free(msg);
 
+	if (rank == S1) {
+		ucp_ep_h other_ep;
+		ep_params.address = server2_addr;
+		
+		status = ucp_ep_create(ucp_worker, &ep_params, &other_ep);
+		if (status != UCS_OK) {
+			goto err;
+	    }
+		
+		/* cross fingers here! */
+		fprintf(stderr, "MIGRATION STARTED!\n");
+		ucp_worker_migrate(ucp_worker, other_ep);
+		fprintf(stderr, "OMG MIGRATION COMPLETE OMG!\n");
+		
+		ucp_ep_destroy(other_ep);
+	}
+
+
 err_ep:
     ucp_ep_destroy(client_ep);
 
@@ -428,6 +532,11 @@ int main(int argc, char **argv)
     char *client_target_name = NULL;
     int oob_sock = -1;
     int ret = -1;
+    int size, rank;
+
+    MPI_Init(&argc, &argv);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     memset(&ucp_params, 0, sizeof(ucp_params));
     memset(&worker_params, 0, sizeof(worker_params));
@@ -469,45 +578,38 @@ int main(int argc, char **argv)
     printf("[0x%x] local address length: %lu\n",
            (unsigned int)pthread_self(), local_addr_len);
 
-    /* OOB connection establishment */
-    if (client_target_name) {
-        peer_addr_len = local_addr_len;
-
-        oob_sock = client_connect(client_target_name, server_port);
-        CHKERR_JUMP(oob_sock < 0, "client_connect\n", err_addr);
-
-        ret = recv(oob_sock, &addr_len, sizeof(addr_len), MSG_WAITALL);
-        CHKERR_JUMP_RETVAL(ret != (int)sizeof(addr_len),
-                           "receive address length\n", err_addr, ret);
-
-        peer_addr_len = addr_len;
-        peer_addr = malloc(peer_addr_len);
-        CHKERR_JUMP(!peer_addr, "allocate memory\n", err_addr);
-
-        ret = recv(oob_sock, peer_addr, peer_addr_len, MSG_WAITALL);
-        CHKERR_JUMP_RETVAL(ret != (int)peer_addr_len,
-                           "receive address\n", err_peer_addr, ret);
-    } else {
-        oob_sock = server_connect(server_port);
-        CHKERR_JUMP(oob_sock < 0, "server_connect\n", err_peer_addr);
-
-        addr_len = local_addr_len;
-        ret = send(oob_sock, &addr_len, sizeof(addr_len), 0);
-        CHKERR_JUMP_RETVAL(ret != (int)sizeof(addr_len),
-                           "send address length\n", err_peer_addr, ret);
-
-        ret = send(oob_sock, local_addr, local_addr_len, 0);
-        CHKERR_JUMP_RETVAL(ret != (int)local_addr_len, "send address\n",
-                           err_peer_addr, ret);
+    MPI_Status stat;
+    /* Exchange all addresses */
+    /* 0 is client, 1 is first server, 2 is second server */
+    if(rank == CLIENT) /* client */
+    {
+        MPI_Recv(&peer_addr_len, 1, MPI_INT, S1, S1C, MPI_COMM_WORLD, &stat);
+        peer_addr = malloc(sizeof(char)*peer_addr_len);
+        MPI_Recv(peer_addr, peer_addr_len, MPI_CHAR, S1, S1C, MPI_COMM_WORLD, &stat);
+        /* send my address to first server. get address for second server for migration */
+    }
+    else if(rank == S1) /* first server */
+    {
+        /* Send address length first */
+        MPI_Recv(&server2_addr_len, 1, MPI_INT, S2, S2S1, MPI_COMM_WORLD, &stat);
+        server2_addr = malloc(sizeof(char)*server2_addr_len);
+        /* send my address to client, get clients address. */
+        MPI_Recv(server2_addr, server2_addr_len, MPI_CHAR, S2, S2S1, MPI_COMM_WORLD, &stat);
+        MPI_Send(&local_addr_len, 1, MPI_INT, CLIENT, S1C, MPI_COMM_WORLD);
+        MPI_Send(local_addr, local_addr_len, MPI_CHAR, CLIENT, S1C, MPI_COMM_WORLD);
+    }
+    else if(rank == S2) /* second server */
+    {
+        MPI_Send(&local_addr_len, 1, MPI_INT, S1, S2S1, MPI_COMM_WORLD);
+        MPI_Send(local_addr, local_addr_len, MPI_CHAR, S1, S2S1, MPI_COMM_WORLD);
     }
 
     ret = run_test(client_target_name, ucp_worker);
 
     if (!ret && !err_handling_opt.failure) {
         /* Make sure remote is disconnected before destroying local worker */
-        ret = barrier(oob_sock);
+        MPI_Barrier(MPI_COMM_WORLD);
     }
-    close(oob_sock);
 
 err_peer_addr:
     free(peer_addr);
@@ -522,10 +624,11 @@ err_cleanup:
     ucp_cleanup(ucp_context);
 
 err:
+    MPI_Finalize();
     return ret;
 }
 
-int parse_cmd(int argc, char * const argv[], char **server_name)
+int parse_cmd(int argc, char * const argv[])
 {
     int c = 0, index = 0;
     opterr = 0;
@@ -533,7 +636,7 @@ int parse_cmd(int argc, char * const argv[], char **server_name)
     err_handling_opt.ucp_err_mode   = UCP_ERR_HANDLING_MODE_NONE;
     err_handling_opt.failure        = 0;
 
-    while ((c = getopt(argc, argv, "wfben:p:s:h")) != -1) {
+    while ((c = getopt(argc, argv, "wfbs:h")) != -1) {
         switch (c) {
         case 'w':
             ucp_test_mode = TEST_MODE_WAIT;
@@ -543,20 +646,6 @@ int parse_cmd(int argc, char * const argv[], char **server_name)
             break;
         case 'b':
             ucp_test_mode = TEST_MODE_PROBE;
-            break;
-        case 'e':
-            err_handling_opt.ucp_err_mode   = UCP_ERR_HANDLING_MODE_PEER;
-            err_handling_opt.failure        = 1;
-            break;
-        case 'n':
-            *server_name = optarg;
-            break;
-        case 'p':
-            server_port = atoi(optarg);
-            if (server_port <= 0) {
-                fprintf(stderr, "Wrong server port number %d\n", server_port);
-                return UCS_ERR_UNSUPPORTED;
-            }
             break;
         case 's':
             test_string_length = atol(optarg);
@@ -585,20 +674,13 @@ int parse_cmd(int argc, char * const argv[], char **server_name)
                     "ucp_worker_get_efd function with later poll\n");
             fprintf(stderr, "  -b      Select test mode \"busy polling\" to test "
                     "ucp_tag_probe_nb and ucp_worker_progress (default)\n");
-            fprintf(stderr, "  -e      Emulate unexpected failure on server side"
-                    "and handle an error on client side with enabled "
-                    "UCP_ERR_HANDLING_MODE_PEER\n");
-            fprintf(stderr, "  -n name Set node name or IP address "
-                    "of the server (required for client and should be ignored "
-                    "for server)\n");
-            fprintf(stderr, "  -p port Set alternative server port (default:13337)\n");
             fprintf(stderr, "  -s size Set test string length (default:16)\n");
             fprintf(stderr, "\n");
             return UCS_ERR_UNSUPPORTED;
         }
     }
-    fprintf(stderr, "INFO: UCP_HELLO_WORLD mode = %d server = %s port = %d\n",
-            ucp_test_mode, *server_name, server_port);
+    fprintf(stderr, "INFO: UCP_HELLO_WORLD mode = %d\n",
+            ucp_test_mode);
 
     for (index = optind; index < argc; index++) {
         fprintf(stderr, "WARNING: Non-option argument %s\n", argv[index]);

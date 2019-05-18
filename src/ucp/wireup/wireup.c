@@ -151,6 +151,7 @@ static inline int ucp_wireup_is_ep_needed(ucp_ep_h ep)
  * @param [in] rsc_tli  Resource index for every lane.
  */
 static ucs_status_t ucp_wireup_msg_send(ucp_ep_h ep, uint8_t type,
+                                        uint64_t reconnect_uuid,
                                         uint64_t tl_bitmap,
                                         const ucp_rsc_index_t *rsc_tli)
 {
@@ -174,6 +175,7 @@ static ucs_status_t ucp_wireup_msg_send(ucp_ep_h ep, uint8_t type,
     req->flags                   = 0;
     req->send.ep                 = ep;
     req->send.wireup.type        = type;
+    req->send.wireup.reconnect   = reconnect_uuid;
     req->send.wireup.err_mode    = ucp_ep_config(ep)->key.err_mode;
     req->send.wireup.conn_sn     = ep->conn_sn;
     req->send.wireup.src_ep_ptr  = (uintptr_t)ep;
@@ -330,7 +332,7 @@ static UCS_F_NOINLINE void
 ucp_wireup_process_request(ucp_worker_h worker, const ucp_wireup_msg_t *msg,
                            const ucp_unpacked_address_t *remote_address)
 {
-    uint64_t remote_uuid   = remote_address->uuid;
+    uint64_t remote_uuid   = msg->reconnect ? msg->reconnect : remote_address->uuid;
     uint64_t tl_bitmap     = 0;
     int send_reply         = 0;
     unsigned ep_init_flags = 0;
@@ -462,7 +464,8 @@ ucp_wireup_process_request(ucp_worker_h worker, const ucp_wireup_msg_t *msg,
         }
 
         ucs_trace("ep %p: sending wireup reply", ep);
-        status = ucp_wireup_msg_send(ep, UCP_WIREUP_MSG_REPLY, tl_bitmap, rsc_tli);
+        status = ucp_wireup_msg_send(ep, UCP_WIREUP_MSG_REPLY,
+                uuid, tl_bitmap, rsc_tli);
         if (status != UCS_OK) {
             return;
         }
@@ -489,7 +492,7 @@ static unsigned ucp_wireup_send_msg_ack(void *arg)
     ucs_trace("ep %p: sending wireup ack", ep);
 
     memset(rsc_tli, UCP_NULL_RESOURCE, sizeof(rsc_tli));
-    status = ucp_wireup_msg_send(ep, UCP_WIREUP_MSG_ACK, 0, rsc_tli);
+    status = ucp_wireup_msg_send(ep, UCP_WIREUP_MSG_ACK, 0, 0, rsc_tli);
     return (status == UCS_OK);
 }
 
@@ -542,6 +545,13 @@ ucp_wireup_process_reply(ucp_worker_h worker, const ucp_wireup_msg_t *msg,
                                           ucp_wireup_send_msg_ack, ep,
                                           UCS_CALLBACKQ_FLAG_ONESHOT, &cb_id);
     }
+
+    if (worker->migration.destination.source_uuid != 0) {
+        fprintf(stderr, "#%lu got new WIREUP MESSAGE FROM CLIENT: %hu, %hu\n", worker->uuid, worker->migration.clients_ack, worker->migration.clients_total);
+        if(worker->migration.clients_ack == 0) {
+            ucp_migration_send_complete(worker); /* cached earlier */
+        }
+    }
 }
 
 static UCS_F_NOINLINE
@@ -568,6 +578,8 @@ void ucp_wireup_process_ack(ucp_worker_h worker, const ucp_wireup_msg_t *msg)
     }
 }
 
+ucs_status_t ucp_migration_send_complete(ucp_worker_h worker);
+
 static ucs_status_t ucp_wireup_msg_handler(void *arg, void *data,
                                            size_t length, unsigned flags)
 {
@@ -583,6 +595,8 @@ static ucs_status_t ucp_wireup_msg_handler(void *arg, void *data,
         ucs_error("failed to unpack address: %s", ucs_status_string(status));
         goto out;
     }
+
+    fprintf(stderr, "#%lu got new WIREUP MESSAGE: %hu\n", worker->uuid, msg->type);
 
     if (msg->type == UCP_WIREUP_MSG_ACK) {
         ucs_assert(remote_address.address_count == 0);
@@ -952,7 +966,7 @@ ucs_status_t ucp_wireup_init_lanes(ucp_ep_h ep, const ucp_ep_params_t *params,
     return UCS_OK;
 }
 
-ucs_status_t ucp_wireup_send_request(ucp_ep_h ep)
+ucs_status_t ucp_wireup_send_request(ucp_ep_h ep, uint64_t reconnect_uuid)
 {
     ucp_worker_h worker = ep->worker;
     ucp_rsc_index_t rsc_tli[UCP_MAX_LANES];
@@ -980,7 +994,8 @@ ucs_status_t ucp_wireup_send_request(ucp_ep_h ep)
     }
 
     ucs_debug("ep %p: send wireup request (flags=0x%x)", ep, ep->flags);
-    status = ucp_wireup_msg_send(ep, UCP_WIREUP_MSG_REQUEST, tl_bitmap, rsc_tli);
+    status = ucp_wireup_msg_send(ep, UCP_WIREUP_MSG_REQUEST, reconnect_uuid,
+            tl_bitmap, rsc_tli);
 
     ep->flags |= UCP_EP_FLAG_CONNECT_REQ_QUEUED;
 

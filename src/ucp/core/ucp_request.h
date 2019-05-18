@@ -21,6 +21,7 @@
 #include <ucp/dt/dt.h>
 #include <ucp/rma/rma.h>
 #include <ucp/wireup/wireup.h>
+#include <ucp/wireup/migration.h>
 
 
 #define ucp_trace_req(_sreq, _message, ...) \
@@ -126,6 +127,8 @@ struct ucp_request {
                     uintptr_t        rreq_ptr;    /* receive request ptr on the
                                                      recv side (used in AM rndv) */
                 } tag;
+
+                ucp_migrate_msg_t migration;
 
                 struct {
                     uint64_t      remote_addr; /* Remote address */

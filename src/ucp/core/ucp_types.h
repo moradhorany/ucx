@@ -90,6 +90,7 @@ enum {
     UCP_AM_ID_SINGLE_REPLY      =  25, /* For user defined AM when a reply
                                           is needed */
     UCP_AM_ID_MULTI_REPLY       =  26,
+    UCP_AM_ID_MIGRATION         =  27, /* Worker Migration */
     UCP_AM_ID_LAST
 };
 

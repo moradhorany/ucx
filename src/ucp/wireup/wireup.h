@@ -67,6 +67,7 @@ typedef struct ucp_wireup_msg {
     ucp_ep_conn_sn_t        conn_sn;      /* Connection sequence number */
     uintptr_t               src_ep_ptr;   /* Endpoint of source */
     uintptr_t               dest_ep_ptr;  /* Endpoint of destination (0 - invalid) */
+    uint64_t                reconnect;    /* Endpoint UUID to reconnect (optional) */
 
     /* REQUEST - which p2p lanes must be connected
      * REPLY - which p2p lanes have been connected
@@ -84,7 +85,7 @@ typedef struct {
 } ucp_wireup_select_info_t;
 
 
-ucs_status_t ucp_wireup_send_request(ucp_ep_h ep);
+ucs_status_t ucp_wireup_send_request(ucp_ep_h ep, uint64_t reconnect_uuid);
 
 ucs_status_t ucp_wireup_send_pre_request(ucp_ep_h ep);
 

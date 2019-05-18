@@ -80,6 +80,29 @@ enum {
 
 
 /**
+ * UCP worker migration context.
+ */
+#define MAX_CLIENTS 30
+typedef struct ucp_worker_migration {
+    int                           is_complete;
+    unsigned                      clients_ack;
+    unsigned                      clients_total;
+
+    union {
+    	struct {
+    		uint64_t              dest_uuid;
+    		uint64_t              count;
+			ucp_ep_h              new_eps[MAX_CLIENTS];
+			int                   new_ep_cnt;
+    	} source;
+    	struct {
+    		uint64_t              source_uuid;
+    	} destination;
+    };
+} ucp_worker_migration_t;
+
+
+/**
  * UCP worker statistics counters
  */
 enum {
@@ -226,6 +249,7 @@ typedef struct ucp_worker {
     ucs_mpool_t                   reg_mp;        /* Registered memory pool */
     ucs_mpool_t                   rndv_frag_mp;  /* Memory pool for RNDV fragments */
     ucp_tag_match_t               tm;            /* Tag-matching queues and offload info */
+    ucp_worker_migration_t        migration;     /* Migration-related context */
     uint64_t                      am_message_id; /* For matching long am's */
     ucp_ep_h                      mem_type_ep[UCS_MEMORY_TYPE_LAST];/* memory type eps */
 
