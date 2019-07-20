@@ -6,10 +6,6 @@
 
 #include "ucx_info.h"
 
-#ifdef HAVE_CONFIG_H
-#  include "config.h"
-#endif
-
 #include <ucs/async/async_int.h>
 #include <ucs/async/pipe.h>
 #include <ucs/datastruct/arbiter.h>
