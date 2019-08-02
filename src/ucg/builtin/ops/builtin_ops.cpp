@@ -174,7 +174,8 @@ ucg_builtin_step_am_bcopy_max(ucg_builtin_request_t *req,
         } while ((len >= 0) && (length_left > frag_size));
 
         if (ucs_unlikely(len < 0)) {
-            step->iter_offset -= frag_size;
+            step->iter_offset             -= frag_size;
+            step->am_header.remote_offset -= frag_size;
             return (ucs_status_t)len;
         }
     }
