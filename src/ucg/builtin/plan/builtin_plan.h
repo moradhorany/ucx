@@ -127,6 +127,8 @@ struct ucg_builtin_config {
     ucg_builtin_neighbor_config_t  neighbor;
 
     unsigned                       cache_size;
+    size_t                         short_max_tx;
+    size_t                         bcopy_max_tx;
 };
 
 #endif

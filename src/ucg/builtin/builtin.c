@@ -30,6 +30,12 @@ static ucs_config_field_t ucg_builtin_config_table[] = {
     {"CACHE_SIZE", "1000", "Number of cached collective operations",
      ucs_offsetof(ucg_builtin_config_t, cache_size), UCS_CONFIG_TYPE_UINT},
 
+    {"SHORT_MAX_TX_SIZE", "256", "Largest send operation to use short messages",
+     ucs_offsetof(ucg_builtin_config_t, short_max_tx), UCS_CONFIG_TYPE_MEMUNITS},
+
+    {"BCOPY_MAX_TX_SIZE", "32768", "Largest send operation to use buffer copy",
+     ucs_offsetof(ucg_builtin_config_t, bcopy_max_tx), UCS_CONFIG_TYPE_MEMUNITS},
+
     {NULL}
 };
 
@@ -42,6 +48,7 @@ struct ucg_builtin_group_ctx {
     ucg_group_id_t            group_id;
     uint16_t                  am_id;
     ucs_list_link_t           plan_head;    /* for resource release */
+    ucg_builtin_config_t     *config;
 
     ucg_builtin_comp_slot_t   slots[UCG_BUILTIN_MAX_CONCURRENT_OPS];
 };
@@ -179,6 +186,7 @@ static ucs_status_t ucg_builtin_create(ucg_plan_component_t *plan_component,
     gctx->group                   = group;
     gctx->group_id                = group_id;
     gctx->group_params            = group_params;
+    gctx->config                  = plan_component->plan_config;
     gctx->am_id                   = base_am_id;
     ucs_list_head_init(&gctx->send_head);
     ucs_list_head_init(&gctx->plan_head);
@@ -465,7 +473,7 @@ ucs_status_t ucg_builtin_connect(ucg_builtin_group_ctx_t *ctx,
             phase_ep_index : 0] = idx;
 #endif
     if (!ep) {
-        phase->max_short_one = (size_t)-1; /* Force send via am_short_one() */
+        phase->max_short_one = UCS_CONFIG_MEMUNITS_INF;
         return UCS_OK;
     }
 
@@ -478,9 +486,19 @@ ucs_status_t ucg_builtin_connect(ucg_builtin_group_ctx_t *ctx,
 
     /* Set the thresholds */
     phase->max_short_one = phase->ep_attr->cap.am.max_short - sizeof(ucg_builtin_header_t);
-    phase->max_short_max = (4 * phase->max_short_one)       - sizeof(ucg_builtin_header_t);
+    phase->max_short_max = ctx->config->short_max_tx;
+    // TODO: support UCS_CONFIG_MEMUNITS_AUTO
+    if (phase->max_short_one > phase->max_short_max) {
+        phase->max_short_one = phase->max_short_max;
+    }
+
     phase->max_bcopy_one = phase->ep_attr->cap.am.max_bcopy - sizeof(ucg_builtin_header_t);
-    phase->max_bcopy_max = (4 * phase->max_bcopy_one)       - sizeof(ucg_builtin_header_t);
+    phase->max_bcopy_max = ctx->config->bcopy_max_tx;
+    // TODO: support UCS_CONFIG_MEMUNITS_AUTO
+    if (phase->max_bcopy_one > phase->max_bcopy_max) {
+        phase->max_bcopy_one = phase->max_bcopy_max;
+    }
+
     phase->max_zcopy_one = phase->ep_attr->cap.am.max_zcopy - sizeof(ucg_builtin_header_t);
     return status;
 }
