@@ -25,7 +25,19 @@ AC_ARG_WITH([mpi],
 AC_ARG_WITH([ompi-src],
             [AS_HELP_STRING([--with-ompi-src=(DIR)],
                             [Open MPI optimizations (default is NO).])],
-            [AC_DEFINE([HAVE_OMPI_SRC], [1], [Open MPI optimizations])])
+            [
+             AS_IF([test ! -z "$with_ompi_src"],
+                   [
+                    AC_DEFINE([HAVE_OMPI_SRC], [1], [Open MPI optimizations])
+                    OMPI_CPPFLAGS="-I$with_ompi_src"
+                    OMPI_CPPFLAGS="$OMPI_CPPFLAGS -I$with_ompi_src/opal/include"
+                    OMPI_CPPFLAGS="$OMPI_CPPFLAGS -I$with_ompi_src/orte/include"
+                    OMPI_CPPFLAGS="$OMPI_CPPFLAGS -I$with_ompi_src/ompi/include"
+                    CPPFLAGS="$OMPI_CPPFLAGS $CPPFLAGS"
+                    CXXFLAGS="-fpermissive $CXXFLAGS"
+                    LIBS="$LIBS -lstdc++"
+                   ])
+            ])
 
 #
 # Search for mpicc and mpirun in the given path.
@@ -34,6 +46,7 @@ AS_IF([test "x$with_mpi" = xyes],
         [
         AC_ARG_VAR(MPICC,[MPI C compiler command])
         AC_PATH_PROGS(MPICC,mpicc mpiicc,"",$mpi_path)
+        AC_PATH_PROGS(MPICXX,mpicxx mpiicxx,"",$mpi_path)
         AC_ARG_VAR(MPIRUN,[MPI launch command])
         AC_PATH_PROGS(MPIRUN,mpirun mpiexec aprun orterun,"",$mpi_path)
         AC_SUBST([OMPI_COLL_UCX], ["$mpi_path/../lib/openmpi/mca_coll_ucx.la"])

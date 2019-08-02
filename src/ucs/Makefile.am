@@ -90,7 +90,24 @@ noinst_HEADERS = \
 	async/pipe.h \
 	async/signal.h \
 	async/thread.h \
-	async/async_int.h
+	async/async_int.h \
+	vector/mipp/math/avx512_mathfun.h \
+	vector/mipp/math/avx512_mathfun.hxx \
+	vector/mipp/math/avx_mathfun.h \
+	vector/mipp/math/avx_mathfun.hxx \
+	vector/mipp/math/neon_mathfun.h \
+	vector/mipp/math/neon_mathfun.hxx \
+	vector/mipp/math/sse_mathfun.h \
+	vector/mipp/math/sse_mathfun.hxx \
+	vector/mipp/mipp.h \
+	vector/mipp/mipp_impl_AVX.hxx \
+	vector/mipp/mipp_impl_AVX512.hxx \
+	vector/mipp/mipp_impl_NEON.hxx \
+	vector/mipp/mipp_impl_SSE.hxx \
+	vector/mipp/mipp_object.hxx \
+	vector/mipp/mipp_scalar_op.h \
+	vector/mipp/mipp_scalar_op.hxx \
+	vector/vector.hpp
 
 libucs_la_SOURCES = \
 	algorithm/crc.c \

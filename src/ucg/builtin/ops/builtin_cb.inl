@@ -17,10 +17,16 @@
  */
 
 mpi_reduce_f ucg_builtin_mpi_reduce_cb;
-static void UCS_F_ALWAYS_INLINE ucg_builtin_mpi_reduce(void *mpi_op, 
-        void *src, void *dst, unsigned dcount, void* mpi_datatype)
+static void UCS_F_ALWAYS_INLINE ucg_builtin_mpi_reduce(int is_full_fragment,
+        void *mpi_op, void *src, void *dst, unsigned dcount, void* mpi_datatype)
 {
-    UCS_PROFILE_CALL_VOID(ucg_builtin_mpi_reduce_cb, mpi_op, (char*)src,
+    int ret = UCS_PROFILE_CALL(ucs_vector_mpi_reduce_builtin, is_full_fragment,
+            mpi_op, (int8_t*)src, (int8_t*)dst, dcount, mpi_datatype);
+    if (ret == 0) {
+        return;
+    }
+
+UCS_PROFILE_CALL_VOID(ucg_builtin_mpi_reduce_cb, mpi_op, (char*)src,
             (char*)dst, dcount, mpi_datatype);
 }
 
@@ -28,7 +34,7 @@ static void UCS_F_ALWAYS_INLINE ucg_builtin_mpi_reduce(void *mpi_op,
 {                                                                              \
     ucg_collective_params_t *params = _params;                                 \
     ucs_assert(length == (params->recv.count * params->recv.dt_len));          \
-    ucg_builtin_mpi_reduce(params->recv.op_ext,                                \
+    ucg_builtin_mpi_reduce(length == UCG_FRAGMENT_SIZE, params->recv.op_ext,   \
                            _data, (_req)->step->recv_buffer + offset,          \
                            params->recv.count,  params->recv.dt_ext);          \
 }
@@ -36,7 +42,7 @@ static void UCS_F_ALWAYS_INLINE ucg_builtin_mpi_reduce(void *mpi_op,
 #define ucg_builtin_mpi_reduce_partial(_req, _offset, _data, _length, _params) \
 {                                                                              \
     ucg_collective_params_t *params = _params;                                 \
-    ucg_builtin_mpi_reduce(params->recv.op_ext,                                \
+    ucg_builtin_mpi_reduce(length == UCG_FRAGMENT_SIZE, params->recv.op_ext,   \
                            _data, (_req)->step->recv_buffer + offset,          \
                            length / params->recv.dt_len, params->recv.dt_ext); \
 }

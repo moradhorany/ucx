@@ -3,6 +3,9 @@
 # See file LICENSE for terms.
 #
 
+CC=$(MPICC)
+CXX=$(MPICXX)
+
 noinst_LTLIBRARIES         = libucg_builtin.la
 libucg_builtin_la_CFLAGS   = $(BASE_CFLAGS)
 libucg_builtin_la_CPPFLAGS = $(BASE_CPPFLAGS)
@@ -14,7 +17,7 @@ noinst_HEADERS = \
 
 libucg_builtin_la_SOURCES = \
 	builtin.c \
-	ops/builtin_ops.c \
+	ops/builtin_ops.cpp \
 	plan/builtin_tree.c \
 	plan/builtin_neighbor.c \
 	plan/builtin_recursive.c

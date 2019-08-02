@@ -3,7 +3,10 @@
 # See file LICENSE for terms.
 #
 
-SUBDIRS = base builtin
+CC=$(MPICC)
+CXX=$(MPICXX)
+
+SUBDIRS = base builtin hicoll
 
 lib_LTLIBRARIES    = libucg.la
 libucg_la_CFLAGS   = $(BASE_CFLAGS)

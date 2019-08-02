@@ -12,6 +12,10 @@
 #include <ucs/debug/assert.h>
 #include <ucp/dt/dt_contig.h>
 
+#include <ucs/vector/vector.hpp>
+#define UCG_FRAGMENT_SIZE 8128
+UCS_VECTOR_DECLARE(builtin, UCG_FRAGMENT_SIZE)
+
 #include "builtin_cb.inl"
 
 #ifndef MPI_IN_PLACE
@@ -559,6 +563,8 @@ step_execute_error:
     return status;
 }
 
+BEGIN_C_DECLS
+
 void ucg_builtin_op_discard(ucg_op_t *op)
 {
     ucg_builtin_op_t *builtin_op = (ucg_builtin_op_t*)op;
@@ -644,8 +650,8 @@ ucg_builtin_step_send_flags(ucg_builtin_op_step_t *step,
     } else if (length <= phase->max_short_max) {
         /* Short send - multiple messages */
         *send_flag = (enum ucg_builtin_op_step_flags)
-                     UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SHORT |
-                     UCG_BUILTIN_OP_STEP_FLAG_FRAGMENTED;
+                     (UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SHORT |
+                      UCG_BUILTIN_OP_STEP_FLAG_FRAGMENTED);
 
         step->fragment_length = phase->max_short_one -
                                (phase->max_short_one % dt_len);
@@ -664,8 +670,8 @@ ucg_builtin_step_send_flags(ucg_builtin_op_step_t *step,
         } else {
             /* ZCopy send - single message */
             *send_flag            = (enum ucg_builtin_op_step_flags)
-                                    UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_ZCOPY |
-                                    UCG_BUILTIN_OP_STEP_FLAG_FRAGMENTED;
+                                    (UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_ZCOPY |
+                                     UCG_BUILTIN_OP_STEP_FLAG_FRAGMENTED);
             step->fragment_length = phase->max_zcopy_one -
                                    (phase->max_zcopy_one % dt_len);
             step->fragments       = length / step->fragment_length +
@@ -689,8 +695,8 @@ ucg_builtin_step_send_flags(ucg_builtin_op_step_t *step,
     } else {
         /* BCopy send - multiple messages */
         *send_flag            = (enum ucg_builtin_op_step_flags)
-                                UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BCOPY |
-                                UCG_BUILTIN_OP_STEP_FLAG_FRAGMENTED;
+                                (UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BCOPY |
+                                 UCG_BUILTIN_OP_STEP_FLAG_FRAGMENTED);
         step->fragment_length = phase->max_bcopy_one -
                                (phase->max_bcopy_one % dt_len);
         step->fragments       = length / step->fragment_length +
@@ -911,3 +917,9 @@ op_cleanup:
     ucs_mpool_put_inline(op);
     return status;
 }
+
+void ucg_builtin_op_initialize() {
+    UCS_VECTOR_INIT(builtin, UCG_FRAGMENT_SIZE)
+}
+
+END_C_DECLS

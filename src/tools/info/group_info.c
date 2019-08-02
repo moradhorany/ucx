@@ -8,6 +8,7 @@
 
 #include <ucg/api/ucg_mpi.h>
 #include <ucg/api/ucg_plan_component.h>
+#include <ucg/api/ucg_mpi.h>
 #include <ucs/debug/memtrack.h>
 
 /* In accordance with @ref enum ucg_predefined */
