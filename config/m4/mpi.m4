@@ -58,7 +58,8 @@ AS_IF([test -n "$MPICC"],
       [AC_DEFINE([HAVE_MPI], [1], [MPI support])
        mpi_enable=Disabled],
       [mpi_enable=Enabled])
-AM_CONDITIONAL([HAVE_MPI],    [test -n "$MPIRUN"])
-AM_CONDITIONAL([HAVE_MPICC],  [test -n "$MPICC"])
-AM_CONDITIONAL([HAVE_MPIRUN], [test -n "$MPIRUN"])
-AM_CONDITIONAL([HAVE_OMPI],   [test -n "$OMPI_COLL_UCX"])
+AM_CONDITIONAL([HAVE_MPI],      [test -n "$MPIRUN"])
+AM_CONDITIONAL([HAVE_MPICC],    [test -n "$MPICC"])
+AM_CONDITIONAL([HAVE_MPIRUN],   [test -n "$MPIRUN"])
+AM_CONDITIONAL([HAVE_OMPI],     [test -n "$OMPI_COLL_UCX"])
+AM_CONDITIONAL([HAVE_OMPI_SRC], [test ! -z "$with_ompi_src"])

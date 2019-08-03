@@ -1336,6 +1336,7 @@ static inline int memmove_(T *dst, const T *src, const size_t dataSize)
     // TODO: support non-rounded dataSize
     for (int i = 0; i < (dataSize / mipp::nElReg<T>()); i += mipp::nElReg<T>())
         mipp::store(&dst[i], mipp::load<T>(&src[i]));
+    return 0;
 }
 
 template <typename T>
@@ -1344,6 +1345,7 @@ static inline int memmove_unaligned(T *dst, const T *src, const size_t dataSize)
     // TODO: support non-rounded dataSize
     for (int i = 0; i < (dataSize / mipp::nElReg<T>()); i += mipp::nElReg<T>())
         mipp::storeu(&dst[i], mipp::loadu<T>(&src[i]));
+    return 0;
 }
 
 template <int Size, typename T>
@@ -1351,6 +1353,7 @@ static inline int memmove_fixed(T *dst, const T *src)
 {
     for (int i = 0; i < (Size / mipp::nElReg<T>()); i += mipp::nElReg<T>())
         mipp::store(&dst[i], mipp::load<T>(&src[i]));
+    return 0;
 }
 
 // ------------------------------------------------------------------------------------------------- wrapper to objects

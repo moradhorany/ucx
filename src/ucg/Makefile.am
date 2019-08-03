@@ -3,9 +3,6 @@
 # See file LICENSE for terms.
 #
 
-CC=$(MPICC)
-CXX=$(MPICXX)
-
 SUBDIRS = base builtin hicoll
 
 lib_LTLIBRARIES    = libucg.la

@@ -3,8 +3,12 @@
 # See file LICENSE for terms.
 #
 
+if HAVE_OMPI_SRC
 CC=$(MPICC)
 CXX=$(MPICXX)
+else
+CXXFLAGS="-fpermissive $CXXFLAGS"
+endif
 
 noinst_LTLIBRARIES         = libucg_builtin.la
 libucg_builtin_la_CFLAGS   = $(BASE_CFLAGS)

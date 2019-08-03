@@ -12,9 +12,12 @@
 #include <ucs/debug/assert.h>
 #include <ucp/dt/dt_contig.h>
 
-#include <ucs/vector/vector.hpp>
 #define UCG_FRAGMENT_SIZE 8128
+
+#if HAVE_OMPI_SRC
+#include <ucs/vector/vector.hpp>
 UCS_VECTOR_DECLARE(builtin, UCG_FRAGMENT_SIZE)
+#endif
 
 #include "builtin_cb.inl"
 
@@ -920,7 +923,9 @@ op_cleanup:
 }
 
 void ucg_builtin_op_initialize() {
+#if HAVE_OMPI_SRC
     UCS_VECTOR_INIT(builtin, UCG_FRAGMENT_SIZE)
+#endif
 }
 
 END_C_DECLS

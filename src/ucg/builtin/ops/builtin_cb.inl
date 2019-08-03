@@ -20,11 +20,13 @@ mpi_reduce_f ucg_builtin_mpi_reduce_cb;
 static void UCS_F_ALWAYS_INLINE ucg_builtin_mpi_reduce(int is_full_fragment,
         void *mpi_op, void *src, void *dst, unsigned dcount, void* mpi_datatype)
 {
+#if HAVE_OMPI_SRC
     int ret = UCS_PROFILE_CALL(ucs_vector_mpi_reduce_builtin, is_full_fragment,
             mpi_op, (int8_t*)src, (int8_t*)dst, dcount, mpi_datatype);
     if (ret == 0) {
         return;
     }
+#endif
 
 UCS_PROFILE_CALL_VOID(ucg_builtin_mpi_reduce_cb, mpi_op, (char*)src,
             (char*)dst, dcount, mpi_datatype);

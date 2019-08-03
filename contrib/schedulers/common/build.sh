@@ -12,6 +12,7 @@ touch ../ompi
 touch ../osu
 
 # Build Open UCX
+git clean -f -X -d # Remove all traces of the previous build...
 ./autogen.sh
 ./contrib/configure-opt --prefix=$BUILD_PATH
 make
