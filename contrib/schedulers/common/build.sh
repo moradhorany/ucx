@@ -1,6 +1,11 @@
 . $(dirname "$0")/common.sh
 cd $(dirname "$0")/../../..
 
+# UCX Cleanup, which may fail (therefore preceeds "set -e")
+make distclean
+find . -name "*.la" | xargs rm
+git clean -f -X -d
+
 # Test the presence/location of intended sources
 set -e
 touch ../ompi
@@ -26,6 +31,12 @@ git clean -f -X -d # Remove all traces of the previous build...
 ./contrib/configure-opt  --prefix=$BUILD_PATH --with-mpi=$BUILD_PATH --with-ompi-src=`pwd`/../ompi
 make
 make install
+
+# Re-build Open MPI (with the new Open UCX)
+pushd ../ompi
+make
+make install
+popd
 
 # Build OSU
 pushd ../osu
