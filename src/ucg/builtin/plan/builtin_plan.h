@@ -129,6 +129,7 @@ struct ucg_builtin_config {
     unsigned                       cache_size;
     size_t                         short_max_tx;
     size_t                         bcopy_max_tx;
+    unsigned                       mem_reg_opt_cnt;
 };
 
 #endif

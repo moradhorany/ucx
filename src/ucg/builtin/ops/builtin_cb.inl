@@ -439,7 +439,14 @@ static ucs_status_t ucg_builtin_no_optimization(ucg_builtin_op_t *op)
     return UCS_OK;
 }
 
-ucs_status_t ucg_builtin_op_consider_optimization(ucg_builtin_op_t *op)
+/*
+ * While some buffers are large enough to be registered (as in memory
+ * registration) upon first send, others are "buffer-copied" (BCOPY) - unless
+ * it is used repeatedly. If an operation is used this many times - its buffers
+ * will also be registered, turning it into a zero-copy (ZCOPY) send henceforth.
+ */
+ucs_status_t ucg_builtin_op_consider_optimization(ucg_builtin_op_t *op,
+        ucg_builtin_config_t *config)
 {
     ucg_builtin_op_step_t *step;
     ucg_step_idx_t step_idx = 0;
@@ -448,7 +455,7 @@ ucs_status_t ucg_builtin_op_consider_optimization(ucg_builtin_op_t *op)
         if ((step->flags & UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BCOPY) &&
             (step->phase->md_attr->cap.max_reg > step->buffer_length)) {
             op->optm_cb = ucg_builtin_optimize_bcopy_to_zcopy;
-            op->opt_cnt = UCG_BUILTIN_STEP_ZCOPY_OPTIMIZATION_COUNTER;
+            op->opt_cnt = config->mem_reg_opt_cnt;
             return UCS_OK;
         }
     } while (!(step->flags & UCG_BUILTIN_OP_STEP_FLAG_LAST_STEP));

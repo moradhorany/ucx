@@ -36,6 +36,9 @@ static ucs_config_field_t ucg_builtin_config_table[] = {
     {"BCOPY_MAX_TX_SIZE", "32768", "Largest send operation to use buffer copy",
      ucs_offsetof(ucg_builtin_config_t, bcopy_max_tx), UCS_CONFIG_TYPE_MEMUNITS},
 
+    {"MEM_REG_OPT_CNT", "10", "Operation counter before registering the memory",
+     ucs_offsetof(ucg_builtin_config_t, mem_reg_opt_cnt), UCS_CONFIG_TYPE_ULUNITS},
+
     {NULL}
 };
 

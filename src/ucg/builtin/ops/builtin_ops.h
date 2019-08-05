@@ -214,14 +214,6 @@ struct ucg_builtin_comp_slot {
  */
 #define UCG_BUILTIN_MAX_CONCURRENT_OPS (16)
 
-/*
- * While some buffers are large enough to be registered (as in memory
- * registration) upon first send, others are "buffer-copied" (BCOPY) - unless
- * it is used repeatedly. If an operation is used this many times - its buffers
- * will also be registered, turning it into a zero-copy (ZCOPY) send henceforth.
- */
-#define UCG_BUILTIN_STEP_ZCOPY_OPTIMIZATION_COUNTER (10)
-
 END_C_DECLS
 
 #endif
