@@ -248,7 +248,7 @@ static int ucg_builtin_comp_wait_many_then_send_cb(ucg_builtin_request_t *req,
 static int ucg_builtin_comp_last_barrier_step_one_cb(ucg_builtin_request_t *req,
         uint64_t offset, void *data, size_t length)
 {
-    ucg_builtin_comp_last_step_cb(req, UCS_OK);
+    (void) ucg_builtin_comp_step_cb(req, NULL);
     ucg_collective_release_barrier(req->op->super.plan->group);
     return 1;
 }
@@ -257,7 +257,7 @@ static int ucg_builtin_comp_last_barrier_step_many_cb(ucg_builtin_request_t *req
         uint64_t offset, void *data, size_t length)
 {
     UCG_IF_LAST_MESSAGE(req) {
-        ucg_builtin_comp_last_step_cb(req, UCS_OK);
+        (void) ucg_builtin_comp_step_cb(req, NULL);
         ucg_collective_release_barrier(req->op->super.plan->group);
         return 1;
     }
@@ -283,8 +283,15 @@ ucs_status_t ucg_builtin_step_select_callbacks(ucg_builtin_plan_phase_t *phase,
                                    ucg_builtin_comp_recv_one_then_send_cb;
         break;
 
-    case UCG_PLAN_METHOD_SEND_TERMINAL:
     case UCG_PLAN_METHOD_RECV_TERMINAL:
+        /* Special case for barriers, requiring a release */
+        if (ucs_unlikely((!nonzero_length) && (is_last_step))) {
+            *recv_cb = is_single_ep ? ucg_builtin_comp_last_barrier_step_one_cb :
+                                      ucg_builtin_comp_last_barrier_step_many_cb;
+            break;
+        }
+        /* No break */
+    case UCG_PLAN_METHOD_SEND_TERMINAL:
     case UCG_PLAN_METHOD_SCATTER_TERMINAL:
         *recv_cb = is_single_msg ? ucg_builtin_comp_recv_one_cb :
                                    ucg_builtin_comp_recv_many_cb;
@@ -303,7 +310,25 @@ ucs_status_t ucg_builtin_step_select_callbacks(ucg_builtin_plan_phase_t *phase,
         break;
 
     case UCG_PLAN_METHOD_REDUCE_TERMINAL:
+        if (ucs_unlikely(!nonzero_length)) {
+            /*
+             * Special barrier case: if the root does FANIN + FANOUT
+             * (instead of RD) the FANOUT will not trigger the recv_cb, but
+             * actually by the time the FAININ ended - the barrier can be
+             * released (since everyone has arrived). This triggers the condition
+             * in the next UCG_PLAN_METHOD_REDUCE_RECURSIVE case to achieve this.
+             */
+            is_last_step = 1;
+        }
+        /* No break */
     case UCG_PLAN_METHOD_REDUCE_RECURSIVE:
+        /* Special case for barriers, requiring a release */
+        if (ucs_unlikely((!nonzero_length) && (is_last_step))) {
+            *recv_cb = is_single_ep ? ucg_builtin_comp_last_barrier_step_one_cb :
+                                      ucg_builtin_comp_last_barrier_step_many_cb;
+            break;
+        }
+
         if (is_single_msg && !is_zcopy) {
             *recv_cb = nonzero_length ? ucg_builtin_comp_reduce_one_cb :
                                         ucg_builtin_comp_wait_one_cb;
@@ -316,12 +341,6 @@ ucs_status_t ucg_builtin_step_select_callbacks(ucg_builtin_plan_phase_t *phase,
     default:
         ucs_error("Invalid method for a collective operation.");
         return UCS_ERR_INVALID_PARAM;
-    }
-
-    /* Special case for barrier release */
-    if (ucs_unlikely((!nonzero_length) && (is_last_step))) {
-        *recv_cb = is_single_ep ? ucg_builtin_comp_last_barrier_step_one_cb :
-                                  ucg_builtin_comp_last_barrier_step_many_cb;
     }
 
     return UCS_OK;

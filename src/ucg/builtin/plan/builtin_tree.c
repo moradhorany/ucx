@@ -11,7 +11,6 @@
 
 #include "builtin_plan.h"
 
-#define MAX_PEERS (100)
 #define MAX_PHASES (5)
 #define ALLOC_SIZE(ep_cnt) (sizeof(ucg_builtin_plan_t) + (MAX_PHASES * \
     (sizeof(ucg_builtin_plan_phase_t) + ((ep_cnt) * sizeof(uct_ep_h)))))
@@ -28,22 +27,6 @@ ucs_config_field_t ucg_builtin_tree_config_table[] = {
 
     {NULL}
 };
-
-typedef struct ucg_builtin_tree_params {
-    enum ucg_builtin_plan_topology_type topo_type;
-    const ucg_group_params_t           *group_params;
-    const ucg_collective_type_t        *coll_type;
-    const ucg_builtin_tree_config_t    *config;
-    ucg_group_member_index_t            root;
-    ucg_builtin_group_ctx_t            *ctx;
-} ucg_builtin_tree_params_t;
-
-typedef struct ucg_builtin_topo_tree_root_phase {
-    ucs_list_link_t          list;
-    ucg_group_member_index_t root;
-    ucg_step_idx_t           phs_cnt;
-    ucg_builtin_plan_phase_t phss[MAX_PEERS];
-} ucg_builtin_topo_tree_root_phase_t;
 
 static inline ucs_status_t ucg_builtin_tree_connect_phase(ucg_builtin_plan_phase_t *phase,
                                                           const ucg_builtin_tree_params_t *params,
@@ -80,29 +63,30 @@ static inline ucs_status_t ucg_builtin_tree_connect_phase(ucg_builtin_plan_phase
     return status;
 }
 
-static inline ucs_status_t ucg_builtin_tree_connect(ucg_builtin_plan_t *tree,
-                                                    ucg_builtin_topo_tree_root_phase_t *root,
-                                                    const ucg_builtin_tree_params_t *params,
-                                                    ucg_group_member_index_t *host_up,
-                                                    unsigned host_up_cnt,
-                                                    ucg_group_member_index_t *net_up,
-                                                    unsigned net_up_cnt,
-                                                    ucg_group_member_index_t *net_down,
-                                                    unsigned net_down_cnt,
-                                                    ucg_group_member_index_t *host_down,
-                                                    unsigned host_down_cnt)
+ucs_status_t ucg_builtin_tree_connect(ucg_builtin_plan_t *tree,
+                                      ucg_builtin_topo_tree_root_phase_t *root,
+                                      const ucg_builtin_tree_params_t *params,
+                                      ucg_step_idx_t step_offset,
+                                      uct_ep_h *first_ep,
+                                      ucg_group_member_index_t *host_up,
+                                      unsigned host_up_cnt,
+                                      ucg_group_member_index_t *net_up,
+                                      unsigned net_up_cnt,
+                                      ucg_group_member_index_t *net_down,
+                                      unsigned net_down_cnt,
+                                      ucg_group_member_index_t *host_down,
+                                      unsigned host_down_cnt)
 {
     unsigned idx;
     ucs_status_t status               = UCS_OK;
     enum ucg_collective_modifiers mod = params->coll_type->modifiers;
-    uct_ep_h *first_ep                = (uct_ep_h*)(&tree->phss[MAX_PHASES]);
-    uct_ep_h *iter_eps                = first_ep + tree->ep_cnt;
+    uct_ep_h *iter_eps                = first_ep;
     ucg_builtin_plan_phase_t *phase   = root ? root->phss : tree->phss;
     ucg_step_idx_t *phs_cnt           = root ? &root->phs_cnt : &tree->phs_cnt;
-    *phs_cnt                          = 0;
+    phase                            += *phs_cnt;
 
     enum ucg_builtin_plan_method_type fanin_method, fanout_method;
-    ucs_assert(host_up_cnt + host_down_cnt + net_up_cnt + net_down_cnt < MAX_PEERS);
+    ucs_assert(host_up_cnt + host_down_cnt + net_up_cnt + net_down_cnt < UCG_BUILTIN_TREE_MAX_RADIX);
     ucs_assert(host_up_cnt + host_down_cnt + net_up_cnt + net_down_cnt > 0);
 
     // TODO: ucs_assert(up_cnt == (params->coll_type->root == params->me));
@@ -123,7 +107,7 @@ static inline ucs_status_t ucg_builtin_tree_connect(ucg_builtin_plan_t *tree,
 
         if (host_up_cnt + host_down_cnt) {
             if (host_up_cnt) host_down[host_down_cnt++] = host_up[0];
-            status = ucg_builtin_tree_connect_phase(phase++, params, 0,
+            status = ucg_builtin_tree_connect_phase(phase++, params, step_offset,
                     &iter_eps, host_down, host_down_cnt, fanin_method);
             (*phs_cnt)++;
             if (status != UCS_OK) {
@@ -144,7 +128,7 @@ static inline ucs_status_t ucg_builtin_tree_connect(ucg_builtin_plan_t *tree,
 
         if (net_up_cnt + net_down_cnt) {
             if (net_up_cnt) net_down[net_down_cnt++] = net_up[0];
-            status = ucg_builtin_tree_connect_phase(phase++, params, 1,
+            status = ucg_builtin_tree_connect_phase(phase++, params, step_offset + 1,
                     &iter_eps, net_down, net_down_cnt, fanin_method);
             (*phs_cnt)++;
         }
@@ -171,11 +155,11 @@ static inline ucs_status_t ucg_builtin_tree_connect(ucg_builtin_plan_t *tree,
         if (net_up_cnt + net_down_cnt) {
             for (idx = 0; idx < net_down_cnt; idx++, net_up_cnt++) {
                 net_up[net_up_cnt] = net_down[idx];
-                if (net_up_cnt == MAX_PEERS) {
+                if (net_up_cnt == UCG_BUILTIN_TREE_MAX_RADIX) {
                     return UCS_ERR_BUFFER_TOO_SMALL;
                 }
             }
-            status = ucg_builtin_tree_connect_phase(phase++, params, 2,
+            status = ucg_builtin_tree_connect_phase(phase++, params, step_offset + 2,
                     &iter_eps, net_up, net_up_cnt, fanout_method);
             (*phs_cnt)++;
         }
@@ -194,11 +178,11 @@ static inline ucs_status_t ucg_builtin_tree_connect(ucg_builtin_plan_t *tree,
         if (host_up_cnt + host_down_cnt) {
             for (idx = 0; idx < host_down_cnt; idx++, host_up_cnt++) {
                 host_up[host_up_cnt] = host_down[idx];
-                if (host_up_cnt == MAX_PEERS) {
+                if (host_up_cnt == UCG_BUILTIN_TREE_MAX_RADIX) {
                     return UCS_ERR_BUFFER_TOO_SMALL;
                 }
             }
-            status = ucg_builtin_tree_connect_phase(phase++, params, 3,
+            status = ucg_builtin_tree_connect_phase(phase++, params, step_offset + 3,
                     &iter_eps, host_up, host_up_cnt, fanout_method);
             (*phs_cnt)++;
         }
@@ -214,19 +198,21 @@ static inline ucs_status_t ucg_builtin_tree_connect(ucg_builtin_plan_t *tree,
     }
 
     /* For the sake of later creation of non-zero-rooted trees - store params */
-    memcpy(phase, params, sizeof(*params));
-    tree->ep_cnt = iter_eps - first_ep;
+    if (!step_offset) {
+        memcpy(phase, params, sizeof(*params));
+        tree->ep_cnt = iter_eps - first_ep;
+    }
     return UCS_OK;
 }
 
-static ucs_status_t ucg_builtin_tree_add_intra(const ucg_builtin_tree_params_t *params,
-                                               ucg_group_member_index_t *my_idx,
-                                               unsigned *ppn,
-                                               ucg_group_member_index_t *up,
-                                               unsigned *final_up_cnt,
-                                               ucg_group_member_index_t *down,
-                                               unsigned *final_down_cnt,
-                                               enum ucg_group_member_distance *master_phase)
+ucs_status_t ucg_builtin_tree_add_intra(const ucg_builtin_tree_params_t *params,
+                                        ucg_group_member_index_t *my_idx,
+                                        unsigned *ppn,
+                                        ucg_group_member_index_t *up,
+                                        unsigned *final_up_cnt,
+                                        ucg_group_member_index_t *down,
+                                        unsigned *final_down_cnt,
+                                        enum ucg_group_member_distance *master_phase)
 {
     unsigned up_cnt = 0;
     unsigned down_cnt = 0;
@@ -298,12 +284,12 @@ static ucs_status_t ucg_builtin_tree_add_intra(const ucg_builtin_tree_params_t *
                 first_distance = UCG_GROUP_MEMBER_DISTANCE_LAST;
             }
             down[down_cnt++] = member_idx;
-            if (down_cnt == MAX_PEERS) {
+            if (down_cnt == UCG_BUILTIN_TREE_MAX_RADIX) {
                 goto limit_exceeded;
             }
         } else if (next_distance == first_distance) {
             down[down_cnt++] = member_idx;
-            if (down_cnt == MAX_PEERS) {
+            if (down_cnt == UCG_BUILTIN_TREE_MAX_RADIX) {
                 goto limit_exceeded;
             }
         }
@@ -333,7 +319,7 @@ static ucs_status_t ucg_builtin_tree_add_intra(const ucg_builtin_tree_params_t *
     return UCS_OK;
 
 limit_exceeded:
-    ucs_error("Internal PPN limit (%i) exceeded", MAX_PEERS);
+    ucs_error("Internal PPN limit (%i) exceeded", UCG_BUILTIN_TREE_MAX_RADIX);
     return UCS_ERR_UNSUPPORTED;
 }
 
@@ -374,12 +360,12 @@ static ucs_status_t ucg_builtin_tree_add_inter(const ucg_builtin_tree_params_t *
                         continue;
                     }
                     up[(*up_cnt)++] = root;
-                    if (*up_cnt == MAX_PEERS) {
+                    if (*up_cnt == UCG_BUILTIN_TREE_MAX_RADIX) {
                         goto limit_exceeded;
                     }
                 } else if (my_idx == root) {
                     down[(*down_cnt)++] = inner_idx;
-                    if (*down_cnt == MAX_PEERS) {
+                    if (*down_cnt == UCG_BUILTIN_TREE_MAX_RADIX) {
                         goto limit_exceeded;
                     }
                 }
@@ -391,7 +377,7 @@ static ucs_status_t ucg_builtin_tree_add_inter(const ucg_builtin_tree_params_t *
     return UCS_OK;
 
 limit_exceeded:
-    ucs_error("Internal PPN limit (%i) exceeded", MAX_PEERS);
+    ucs_error("Internal PPN limit (%i) exceeded", UCG_BUILTIN_TREE_MAX_RADIX);
     return UCS_ERR_UNSUPPORTED;
 }
 
@@ -400,10 +386,10 @@ static ucs_status_t ucg_builtin_tree_build(const ucg_builtin_tree_params_t *para
                                            ucg_builtin_topo_tree_root_phase_t *root,
                                            ucg_builtin_plan_t *tree)
 {
-    ucg_group_member_index_t net_up[MAX_PEERS] = {0};
-    ucg_group_member_index_t net_down[MAX_PEERS] = {0};
-    ucg_group_member_index_t host_up[MAX_PEERS] = {0};
-    ucg_group_member_index_t host_down[MAX_PEERS] = {0};
+    ucg_group_member_index_t net_up[UCG_BUILTIN_TREE_MAX_RADIX] = {0};
+    ucg_group_member_index_t net_down[UCG_BUILTIN_TREE_MAX_RADIX] = {0};
+    ucg_group_member_index_t host_up[UCG_BUILTIN_TREE_MAX_RADIX] = {0};
+    ucg_group_member_index_t host_down[UCG_BUILTIN_TREE_MAX_RADIX] = {0};
 
     unsigned ppn = 0;
     unsigned net_up_cnt = 0;
@@ -472,7 +458,8 @@ static ucs_status_t ucg_builtin_tree_build(const ucg_builtin_tree_params_t *para
     }
 
     /* fill in the tree phases while establishing the connections */
-    return ucg_builtin_tree_connect(tree, root, params,
+    return ucg_builtin_tree_connect(tree, root, params, 0,
+            (uct_ep_h*)(&tree->phss[MAX_PHASES]),
             host_up, host_up_cnt, net_up, net_up_cnt,
             net_down, net_down_cnt, host_down, host_down_cnt);
 }
@@ -486,7 +473,7 @@ ucs_status_t ucg_builtin_tree_create(ucg_builtin_group_ctx_t *ctx,
 {
     /* Allocate worst-case memory footprint, resized down later */
     ucg_builtin_plan_t *tree =
-            (ucg_builtin_plan_t*)UCS_ALLOC_CHECK(ALLOC_SIZE(MAX_PEERS), "buitin_tree");
+            (ucg_builtin_plan_t*)UCS_ALLOC_CHECK(ALLOC_SIZE(UCG_BUILTIN_TREE_MAX_RADIX), "buitin_tree");
     ucs_list_head_init(&tree->by_root);
     tree->phs_cnt = 0;
     tree->ep_cnt  = 0;
@@ -521,7 +508,7 @@ ucs_status_t ucg_builtin_topo_tree_set_root(ucg_group_member_index_t root,
     ucs_assert(root != 0);
 
     /* Check if I'm rank #0, the original root of the plan */
-    struct ucg_builtin_topo_tree_root_phase *root_phase;
+    ucg_builtin_topo_tree_root_phase_t *root_phase;
     /* Search for a previously prepared step - by root rank number */
     ucs_list_for_each(root_phase, &plan->by_root, list) {
         if (root_phase->root == root) {
@@ -530,7 +517,8 @@ ucs_status_t ucg_builtin_topo_tree_set_root(ucg_group_member_index_t root,
     }
 
     /* Extend the tree to allow for additional endpoints */
-    ucg_builtin_plan_t *tree = ucs_realloc(plan, ALLOC_SIZE(MAX_PEERS), "nonzero_root");
+    ucg_builtin_plan_t *tree = ucs_realloc(plan,
+            ALLOC_SIZE(UCG_BUILTIN_TREE_MAX_RADIX), "nonzero_root");
     if (tree == NULL) {
         return UCS_ERR_NO_MEMORY;
     }

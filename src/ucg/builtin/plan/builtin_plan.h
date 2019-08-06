@@ -82,6 +82,7 @@ typedef struct ucg_builtin_config ucg_builtin_config_t;
 
 typedef struct ucg_builtin_tree_config {
     unsigned radix;
+#define UCG_BUILTIN_TREE_MAX_RADIX (32)
     unsigned sock_thresh;
 } ucg_builtin_tree_config_t;
 extern ucs_config_field_t ucg_builtin_tree_config_table[];
@@ -96,6 +97,36 @@ ucs_status_t ucg_builtin_topo_tree_set_root(ucg_group_member_index_t root,
         ucg_builtin_plan_t *plan,
         ucg_builtin_plan_phase_t **first_phase_p,
         unsigned *phase_count_p);
+typedef struct ucg_builtin_tree_params {
+    enum ucg_builtin_plan_topology_type topo_type;
+    const ucg_group_params_t           *group_params;
+    const ucg_collective_type_t        *coll_type;
+    const ucg_builtin_tree_config_t    *config;
+    ucg_group_member_index_t            root;
+    ucg_builtin_group_ctx_t            *ctx;
+} ucg_builtin_tree_params_t;
+typedef struct ucg_builtin_topo_tree_root_phase {
+    ucs_list_link_t          list;
+    ucg_group_member_index_t root;
+    ucg_step_idx_t           phs_cnt;
+    ucg_builtin_plan_phase_t phss[UCG_BUILTIN_TREE_MAX_RADIX];
+} ucg_builtin_topo_tree_root_phase_t;
+ucs_status_t ucg_builtin_tree_connect(ucg_builtin_plan_t *tree,
+        ucg_builtin_topo_tree_root_phase_t *root,
+        const ucg_builtin_tree_params_t *params,
+        ucg_step_idx_t step_offset, uct_ep_h *first_ep,
+        ucg_group_member_index_t *host_up,   unsigned host_up_cnt,
+        ucg_group_member_index_t *net_up,    unsigned net_up_cnt,
+        ucg_group_member_index_t *net_down,  unsigned net_down_cnt,
+        ucg_group_member_index_t *host_down, unsigned host_down_cnt);
+ucs_status_t ucg_builtin_tree_add_intra(const ucg_builtin_tree_params_t *params,
+        ucg_group_member_index_t *my_idx,
+        unsigned *ppn,
+        ucg_group_member_index_t *up,
+        unsigned *final_up_cnt,
+        ucg_group_member_index_t *down,
+        unsigned *final_down_cnt,
+        enum ucg_group_member_distance *master_phase);
 
 typedef struct ucg_builtin_recursive_config {
     unsigned factor;

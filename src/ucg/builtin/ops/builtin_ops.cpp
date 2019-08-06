@@ -304,7 +304,6 @@ ucg_builtin_step_am_zcopy_max(ucg_builtin_request_t *req,
         is_zcopy = (_send_flag) & UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_ZCOPY;      \
         if ((_is_rs1 || _is_r1s) && (step->iter_ep == 0)) {                    \
             uint32_t new_cnt = step->iter_ep = _is_r1s ? 1 : phase->ep_cnt - 1;\
-            ucs_assert(new_cnt > 1);                                           \
             if (_is_pipelined) {                                               \
                 memset(step->fragment_pending, new_cnt, step->fragments);      \
             }                                                                  \
