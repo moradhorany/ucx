@@ -904,7 +904,8 @@ ucs_status_t ucg_builtin_op_create(ucg_plan_t *plan,
     }
 
     /* Select the right optimization callback */
-    status = ucg_builtin_op_consider_optimization(op, plan->planner->plan_config);
+    status = ucg_builtin_op_consider_optimization(op,
+            (ucg_builtin_config_t*)plan->planner->plan_config);
     if (status != UCS_OK) {
         goto op_cleanup;
     }

@@ -78,7 +78,7 @@ int main(int argc, char **argv)
         ucs_list_for_each(group, &ctx->groups_head, list) {
             if ((test_rank == -1) || (my_rank == test_rank)) {
                 const ucg_group_params_t *params = ucg_group_get_params((ucg_group_h)group);
-                print_ucg_topology(planner_name, worker, my_rank, collective_name,
+                print_ucg_topology(planner_name, worker, 0, my_rank, collective_name,
                         params->distance, params->member_count, is_full);
             }
         }

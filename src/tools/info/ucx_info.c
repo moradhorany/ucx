@@ -45,6 +45,7 @@ static void usage() {
     printf("  -P <planner>    UCG Planner component to use\n");
     printf("  -C <coll_type>  UCG Collective operation type to plan (default: allreduce)\n");
     printf("  -I <index>      UCG Group index to use as mine (a.k.a \"rank\", default: 0)\n");
+    printf("  -R <index>      UCG Group index to use as root (a.k.a \"rank\", default: 0)\n");
     printf("  -T X:[Y:[Z]]    UCG Topology: number of peers of each distance (socket:host:fabric)\n");
 #endif
     printf("\nOther settings:\n");
@@ -77,7 +78,8 @@ int main(int argc, char **argv)
 {
 #if ENABLE_UCG
     char *collective_type_name = "allreduce";
-    ucg_group_member_index_t peer_count[UCG_GROUP_MEMBER_DISTANCE_LAST] = {0};
+    ucg_group_member_index_t peer_count[UCG_GROUP_MEMBER_DISTANCE_LAST] = {1,1,1,1};
+    ucg_group_member_index_t root_index = 0;
     ucg_group_member_index_t my_index = 0;
     char *planner_name = NULL;
 #endif
@@ -98,7 +100,7 @@ int main(int argc, char **argv)
     ucp_num_eps              = 1;
     dev_type_bitmap          = -1;
     ucp_ep_params.field_mask = 0;
-    while ((c = getopt(argc, argv, "fahvcydbswpegt:n:u:D:P:T:C:I:")) != -1) {
+    while ((c = getopt(argc, argv, "fahvcydbswpegt:n:u:D:P:T:C:I:R:")) != -1) {
         switch (c) {
         case 'f':
             print_flags |= UCS_CONFIG_PRINT_CONFIG | UCS_CONFIG_PRINT_HEADER | UCS_CONFIG_PRINT_DOC;
@@ -140,6 +142,9 @@ int main(int argc, char **argv)
             break;
         case 'I':
             my_index = atol(optarg);
+            break;
+        case 'R':
+            root_index = atol(optarg);
             break;
         case 'C':
             collective_type_name = optarg;
@@ -245,7 +250,7 @@ int main(int argc, char **argv)
     }
 
     if (print_opts & (PRINT_UCP_CONTEXT|PRINT_UCP_WORKER|PRINT_UCP_EP|
-    +                 PRINT_UCG|PRINT_UCG_TOPO)) {
+                      PRINT_UCG|PRINT_UCG_TOPO)) {
         if (ucp_features == 0) {
             printf("Please select UCP features using -u switch: a|r|t|w|g\n");
             usage();
@@ -254,7 +259,7 @@ int main(int argc, char **argv)
         print_ucp_info(print_opts, print_flags, ucp_features, &ucp_ep_params,
                        ucp_num_eps, dev_type_bitmap
 #if ENABLE_UCG
-                       ,planner_name, my_index, collective_type_name, peer_count
+                       ,planner_name, root_index, my_index, collective_type_name, peer_count
 #endif
                        );
     }

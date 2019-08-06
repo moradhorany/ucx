@@ -331,6 +331,7 @@ static ucs_status_t ucg_builtin_plan(ucg_plan_component_t *plan_component,
 
 static void ucg_builtin_print(ucg_plan_t *plan, const ucg_collective_params_t *coll_params)
 {
+    ucs_status_t status;
     ucg_builtin_plan_t *builtin_plan = (ucg_builtin_plan_t*)plan;
     printf("Planner:    %s\n", builtin_plan->super.planner->name);
     printf("Endpoints:  %i\n", builtin_plan->ep_cnt);
@@ -384,6 +385,7 @@ static void ucg_builtin_print(ucg_plan_t *plan, const ucg_collective_params_t *c
             break;
         }
 
+#if ENABLE_DEBUG_DATA || ENABLE_FAULT_TOLERANCE
         printf("with the following peers: ");
         unsigned peer_idx;
         ucg_builtin_plan_phase_t *phase = &builtin_plan->phss[phase_idx];
@@ -391,9 +393,12 @@ static void ucg_builtin_print(ucg_plan_t *plan, const ucg_collective_params_t *c
         for (peer_idx = 0;
              peer_idx < phase->ep_cnt;
              peer_idx++, ep++) {
-            printf("%lu,", *(ucg_group_member_index_t*)ep); /* "debug flow"... */
+            printf("%lu,", phase->indexes[peer_idx]);
         }
         printf("\n");
+#else
+        printf("no peer info (configured without \"--enable-debug-data\")");
+#endif
 
         if (coll_params) {
             int flags = 0;
@@ -406,8 +411,9 @@ static void ucg_builtin_print(ucg_plan_t *plan, const ucg_collective_params_t *c
 
             int8_t *temp_buffer = NULL;
             ucg_builtin_op_step_t step;
-            printf("Step #%i:", phase_idx);
-            ucs_status_t status = ucg_builtin_step_create(&builtin_plan->phss[phase_idx],
+            printf("Step #%i (actual index used: %u):", phase_idx,
+                    builtin_plan->phss[phase_idx].step_index);
+            status = ucg_builtin_step_create(&builtin_plan->phss[phase_idx],
                     flags, 0, plan->group_id, coll_params, &temp_buffer, &step);
             if (status != UCS_OK) {
                 printf("failed to create, %s", ucs_status_string(status));
@@ -424,24 +430,28 @@ static void ucg_builtin_print(ucg_plan_t *plan, const ucg_collective_params_t *c
             flag = ((step.flags & UCG_BUILTIN_OP_STEP_FLAG_RECV1_BEFORE_SEND) != 0);
             printf("\n\t\t(Pre-)RECV1: %i", flag);
             if (flag)
-                printf(" (buffer: %s)", strlen((char*)step.recv_buffer) ? (char*)step.recv_buffer : "temp-buffer");
+                printf(" (buffer: %s)", strlen((char*)step.recv_buffer) ?
+                        (char*)step.recv_buffer : "temp-buffer");
 
             flag = ((step.flags & UCG_BUILTIN_OP_STEP_FLAG_RECV_BEFORE_SEND1) != 0);
             printf("\n\t\t(Pre-)RECVn: %i", flag);
             if (flag)
-                printf(" (buffer: %s)", strlen((char*)step.recv_buffer) ? (char*)step.recv_buffer : "temp-buffer");
+                printf(" (buffer: %s)", strlen((char*)step.recv_buffer) ?
+                        (char*)step.recv_buffer : "temp-buffer");
 
             flag = ((step.flags & UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SHORT) ||
                     (step.flags & UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BCOPY) ||
                     (step.flags & UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_ZCOPY));
             printf("\n\t\t      SEND: %i", flag);
             if (flag)
-                printf(" (buffer: %s)", strlen((char*)step.send_buffer) ? (char*)step.send_buffer : "temp-buffer");
+                printf(" (buffer: %s)", strlen((char*)step.send_buffer) ?
+                        (char*)step.send_buffer : "temp-buffer");
 
             flag = ((step.flags & UCG_BUILTIN_OP_STEP_FLAG_RECV_AFTER_SEND) != 0);
             printf("\n\t\t(Post)RECV: %i", flag);
             if (flag)
-                printf(" (buffer: %s)", strlen((char*)step.recv_buffer) ? (char*)step.recv_buffer : "temp-buffer");
+                printf(" (buffer: %s)", strlen((char*)step.recv_buffer) ?
+                        (char*)step.recv_buffer : "temp-buffer");
 
             flag = ((step.flags & UCG_BUILTIN_OP_STEP_FLAG_SINGLE_ENDPOINT) != 0);
             printf("\n\t\tSINGLE_ENDPOINT: %i", flag);

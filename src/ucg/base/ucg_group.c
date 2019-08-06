@@ -421,10 +421,6 @@ ucs_status_t ucg_init(const ucp_params_t *params,
     return status;
 }
 
-/* The dummy strucutures below are used by ucg_plan_connect() for ucx_info */
-uct_md_attr_t dummy_md_attr = {{0}};
-uct_iface_attr_t dummy_ep_attr = {{{0}}};
-
 ucs_status_t ucg_plan_connect(ucg_group_h group, ucg_group_member_index_t idx,
         uct_ep_h *ep_p, const uct_iface_attr_t **ep_attr_p, uct_md_h* md_p,
         const uct_md_attr_t** md_attr_p)
@@ -441,6 +437,7 @@ ucs_status_t ucg_plan_connect(ucg_group_h group, ucg_group_member_index_t idx,
 
     /* special case: connecting to a zero-length address means it's "debugging" */
     if (ucs_unlikely(remote_addr_len == 0)) {
+        *ep_p = NULL;
         return UCS_OK;
     }
 
@@ -488,4 +485,3 @@ connect_cleanup:
     group->params.release_address_f(remote_addr);
     return status;
 }
-//}

@@ -93,7 +93,9 @@ void print_ucp_info(int print_opts, ucs_config_print_flags_t print_flags,
                     size_t estimated_num_eps, unsigned dev_type_bitmap
 #if ENABLE_UCG
                     ,const char *planner_name,
-                    ucg_group_member_index_t my_index, const char *collective_type_name,
+                    ucg_group_member_index_t root_index,
+                    ucg_group_member_index_t my_index,
+                    const char *collective_type_name,
                     ucg_group_member_index_t peer_count[UCG_GROUP_MEMBER_DISTANCE_LAST]
 #endif
                     )
@@ -195,7 +197,7 @@ void print_ucp_info(int print_opts, ucs_config_print_flags_t print_flags,
         ucg_group_member_index_t dist_len;
         enum ucg_group_member_distance* dist;
         if (UCS_OK == gen_ucg_topology(my_index, peer_count, &dist, &dist_len)) {
-            print_ucg_topology(planner_name, worker, my_index,
+            print_ucg_topology(planner_name, worker, root_index, my_index,
                     collective_type_name, dist, dist_len, 1);
         }
     }

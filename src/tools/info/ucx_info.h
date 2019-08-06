@@ -48,7 +48,9 @@ void print_ucp_info(int print_opts, ucs_config_print_flags_t print_flags,
                     size_t estimated_num_eps, unsigned dev_type_bitmap
 #if ENABLE_UCG
                     ,const char *planner_name,
-                    ucg_group_member_index_t my_index, const char *collective_type_name,
+                    ucg_group_member_index_t root_index,
+                    ucg_group_member_index_t my_index,
+                    const char *collective_type_name,
                     ucg_group_member_index_t peer_count[UCG_GROUP_MEMBER_DISTANCE_LAST]
 #endif
                     );
@@ -60,7 +62,9 @@ ucs_status_t gen_ucg_topology(ucg_group_member_index_t me,
         ucg_group_member_index_t *distance_array_length_p);
 
 void print_ucg_topology(const char *req_planner_name, ucg_worker_h worker,
-        ucg_group_member_index_t me, const char *collective_type_name,
+        ucg_group_member_index_t root,
+        ucg_group_member_index_t me,
+        const char *collective_type_name,
         enum ucg_group_member_distance *distance_array,
         ucg_group_member_index_t member_count, int is_verbose);
 #endif

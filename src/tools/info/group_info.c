@@ -90,7 +90,9 @@ ucs_status_t gen_ucg_topology(ucg_group_member_index_t me,
 }
 
 void print_ucg_topology(const char *req_planner_name, ucg_worker_h worker,
-        ucg_group_member_index_t me, const char *collective_type_name,
+        ucg_group_member_index_t root,
+        ucg_group_member_index_t me,
+        const char *collective_type_name,
         enum ucg_group_member_distance *distance_array,
         ucg_group_member_index_t member_count, int is_verbose)
 {
@@ -105,13 +107,13 @@ void print_ucg_topology(const char *req_planner_name, ucg_worker_h worker,
             printf("M");
             break;
         case UCG_GROUP_MEMBER_DISTANCE_SOCKET:
-            printf("s");
+            printf(root == array_idx ? "S" : "s");
             break;
         case UCG_GROUP_MEMBER_DISTANCE_HOST:
-            printf("h");
+            printf(root == array_idx ? "H" : "h");
             break;
         case UCG_GROUP_MEMBER_DISTANCE_NET:
-            printf("n");
+            printf(root == array_idx ? "N" : "n");
             break;
         default:
             printf("<Failed to generate UCG distance array>\n");
@@ -153,6 +155,7 @@ void print_ucg_topology(const char *req_planner_name, ucg_worker_h worker,
     coll_params.recv.count = 1;
     coll_params.send.buf = "send-buffer";
     coll_params.recv.buf = "recv-buffer";
+    coll_params.type.root = root;
 
     const char **name = collective_names;
     while  (*name) {
