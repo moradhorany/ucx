@@ -7,22 +7,22 @@ import os, sys, subprocess, csv, fcntl
 OSU_DONE_MARK   = "1048576" # last datapoint...
 MPIRUN_PATH     = "bin/mpirun"
 OSU_PATH        = "libexec/osu-micro-benchmarks/mpi/collective/"
-OSU_TESTS       = ["osu_barrier  ",
-                   "osu_bcast    ",
+OSU_TESTS       = ["osu_bcast    ",
                    "osu_reduce   ",
                    "osu_allreduce"]
 OSU_COLL_LIBS   = {"ucx"     : "          ",
                    "non_ucx" : "^ucx      ",
                    "naive"   : "^ucx,hcoll"}
-UCX_THRESHOLDS  = {"_short_only" : "UCX_BUILTIN_SHORT_MAX_TX_SIZE=inf UCX_BUILTIN_BCOPY_MAX_TX_SIZE=inf",
-                   "_bcopy_only" : "UCX_BUILTIN_SHORT_MAX_TX_SIZE=0   UCX_BUILTIN_BCOPY_MAX_TX_SIZE=inf",
-                   "_zcopy_only" : "UCX_BUILTIN_SHORT_MAX_TX_SIZE=0   UCX_BUILTIN_BCOPY_MAX_TX_SIZE=0  "}
+UCX_NET_ONLY    = " UCX_TLS=self,cm,rc "
+UCX_THRESHOLDS  = {"_short_only" : "UCX_BUILTIN_SHORT_MAX_TX_SIZE=inf UCX_BUILTIN_BCOPY_MAX_TX_SIZE=inf UCX_BUILTIN_MEM_REG_OPT_CNT=1000000",
+                   "_bcopy_only" : "UCX_BUILTIN_SHORT_MAX_TX_SIZE=0   UCX_BUILTIN_BCOPY_MAX_TX_SIZE=inf UCX_BUILTIN_MEM_REG_OPT_CNT=1000000",
+                   "_zcopy_only" : "UCX_BUILTIN_SHORT_MAX_TX_SIZE=0   UCX_BUILTIN_BCOPY_MAX_TX_SIZE=0 "}
 OSU_CMD_SLURM   = "OMPI_MCA_coll={lib} {env} /usr/bin/srun --nodes={node_cnt} --ntasks-per-node={ppn}      {test} -f"
 OSU_CMD_DEFAULT = "{mpirun} -mca coll {lib} {env} --display-map --map-by core --bind-to core -H {hostlist} {test} -f"
 RESULT_FOLDER   = "results"
 OUTPUT_FILE     = RESULT_FOLDER + "/{test}_n{hosts}_ppn{ppn}_{lib}"
 CSV_FILE        = "osu_results.csv"
-CSV_FORMAT      = "Collective Type|Host Count|Ranks Per Host|Collectives Library|Message Size|Avg Latency (us)|Min Latency (us)|Max Latency (us)|Iterations".split("|")
+CSV_FORMAT      = "Collective Type|Host Count|Ranks Per Host|Collectives Library|Threshold|Message Size|Avg Latency (us)|Min Latency (us)|Max Latency (us)|Iterations".split("|")
 
 def mpi_path(base_path):
 	return os.path.join(base_path, MPIRUN_PATH)
@@ -34,7 +34,9 @@ def test_path(base_path):
 	return (os.path.exists(mpi_path(base_path)) and
 		os.path.exists(osu_path(base_path, OSU_TESTS[0]).strip()))
 
-def gen_single_osu_cmd(base_path, osu_test, node_cnt, ppn, partial_list, lib_name, lib_cmd, env_name, env_cmd, is_slurm):
+def gen_single_osu_cmd(base_path, osu_test, node_cnt, ppn, partial_list, lib_name, lib_cmd, env_name, env_cmd, is_slurm, is_net_only):
+	if is_net_only:
+		env_cmd += UCX_NET_ONLY
 	if is_slurm:
 		base_cmd = OSU_CMD_SLURM
 	else:
@@ -54,24 +56,23 @@ def gen_single_osu_cmd(base_path, osu_test, node_cnt, ppn, partial_list, lib_nam
 	                         lib=lib_name + env_name)
 	return cmd, out
 
-def gen_osu_cmds(node_list, max_ppn, base_path, is_slurm=False, check_threshold=True):
+def gen_osu_cmds(node_list, ppn, base_path, is_slurm=False, is_net_only=False, check_threshold=False):
 	cmd_list = []
-	nodes_total = node_list.count(",") + 1
-	for node_cnt in [2**(i+1) for i in range(nodes_total) if 2**i <= nodes_total]:
-		for ppn in [1, max_ppn]:
-			seperator = ":%i," % ppn
-			partial_list = seperator.join(node_list.split(",")[:node_cnt]) + seperator[:-1]
-			for osu_test in OSU_TESTS:
-				for lib_name, lib_cmd in OSU_COLL_LIBS.items():
-					cmd, out = gen_single_osu_cmd(base_path, osu_test, node_cnt,
-						ppn, partial_list, lib_name, lib_cmd, "", "", is_slurm)
-					cmd_list.append((cmd, os.path.join(base_path, out)))
+	node_cnt = node_list.count(",") + 1
+	seperator = ":%i," % ppn
+	partial_list = seperator.join(node_list.split(",")[:node_cnt]) + seperator[:-1]
+	for osu_test in OSU_TESTS:
+		for lib_name, lib_cmd in OSU_COLL_LIBS.items():
+			cmd, out = gen_single_osu_cmd(base_path, osu_test, node_cnt,
+				ppn, partial_list, lib_name, lib_cmd, "", "", is_slurm, is_net_only)
+			cmd_list.append((cmd, os.path.join(base_path, out)))
 
-					if lib_name == "ucx" and check_threshold:
-						for env_name, env_cmd in UCX_THRESHOLDS.items():
-							cmd, out = gen_single_osu_cmd(base_path, osu_test, node_cnt,
-								ppn, partial_list, lib_name, lib_cmd, env_name, env_cmd, is_slurm)
-							cmd_list.append((cmd, os.path.join(base_path, out)))
+			if lib_name == "ucx" and check_threshold:
+				for env_name, env_cmd in UCX_THRESHOLDS.items():
+					cmd, out = gen_single_osu_cmd(base_path, osu_test, node_cnt,
+						ppn, partial_list, lib_name, lib_cmd, env_name, env_cmd,
+						is_slurm, is_net_only)
+					cmd_list.append((cmd, os.path.join(base_path, out)))
 	return cmd_list
 
 def execute(command, output_path, timeout_seconds):
@@ -107,10 +108,14 @@ def parse_path(results_path):
 			if not os.path.isfile(file_path):
 				continue
 			try:
-				osu, coll, host_cnt, ppn, test = file_name.split("_") # e.g. osu_reduce_n2_ppn4_ucx.out
+				if "_only" in file_name:
+					osu, coll, host_cnt, ppn, test, thresh, _ = file_name.split("_")
+				else:
+					thresh = ""
+					osu, coll, host_cnt, ppn, test = file_name.split("_") # e.g. osu_reduce_n2_ppn4_ucx.out
+					assert(test.endswith(".out"))
+					test = test[:-4]
 				assert(osu == "osu")
-				assert(test.endswith(".out"))
-				test = test[:-4]
 				host_cnt = int(host_cnt[1:])
 				ppn = int(ppn[3:])
 
@@ -121,7 +126,9 @@ def parse_path(results_path):
 						try:
 							size, avg, min, max, iters = map(float, line.split())
 							size = int(size)
-							osu_writer.writerow((coll, host_cnt, ppn, test, int(size), avg, min, max, int(iters)))
+							osu_writer.writerow((coll, host_cnt, ppn, test,
+												 thresh, int(size), avg, min,
+												 max, int(iters)))
 						except:
 							continue
 			except:
@@ -131,7 +138,7 @@ if __name__ == "__main__":
 	if len(sys.argv) < 2 or len(sys.argv) > 5:
 		print("USAGE (#1 for parsing, #2 for execution):")
 		print("1. osu.py <path_to_results>")
-		print("2. osu.py <comma_seperated_node_list> <max_ppn> [[<build_path>] <timeout_in_seconds*>]")
+		print("2. osu.py <comma_seperated_node_list> <ppn> [[<build_path>] <timeout_in_seconds*>]")
 		print(" *in Python 3.3+")
 		sys.exit(1)
 
@@ -139,7 +146,7 @@ if __name__ == "__main__":
 		parse_path(sys.argv[1])
 	else:
 		host_list = sys.argv[1]
-		max_ppn   = int(sys.argv[2])
+		ppn   = int(sys.argv[2])
 		base_path = "."
 		timeout   = None
 
@@ -159,7 +166,7 @@ if __name__ == "__main__":
 			os.mkdir(folder)
 
 		# Generate command lines
-		commands = gen_osu_cmds(host_list, max_ppn, base_path, True) # TODO: SLURM auto-detection!
+		commands = gen_osu_cmds(host_list, ppn, base_path)
 		for cmd, out in commands:
 			try:
 				execute(cmd, out, timeout)
