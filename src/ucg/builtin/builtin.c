@@ -114,6 +114,9 @@ UCS_PROFILE_FUNC(ucs_status_t, ucg_builtin_am_handler,
                    ((length - sizeof(ucg_builtin_header_t) <= slot->req.step->fragment_length) &&
                     (slot->req.step->fragments > 1)));
 
+        ucs_trace_req("ucg_builtin_am_handler CB: coll_id %u step_idx %u cb %p pending %u",
+                header->coll_id, header->step_idx, slot->cb, slot->req.pending);
+
         /* The packet arrived "on time" - process it */
         UCS_PROFILE_CODE("ucg_builtin_am_handler_cb") {
             (void) slot->cb(&slot->req, header->remote_offset,
@@ -136,6 +139,9 @@ UCS_PROFILE_FUNC(ucs_status_t, ucg_builtin_am_handler,
         memcpy(&desc->header, data, length);
         ret = UCS_OK;
     }
+
+    ucs_trace_req("ucg_builtin_am_handler STORE: group_id %u coll_id %u(%u) step_idx %u(%u)",
+            header->group_id, header->coll_id, slot->coll_id, header->step_idx, slot->step_idx);
 
     desc->super.flags  = am_flags;
     desc->super.length = length - sizeof(ucg_builtin_header_t);
