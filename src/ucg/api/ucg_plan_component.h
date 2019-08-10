@@ -122,9 +122,15 @@ typedef struct ucg_request {
 
 typedef struct ucg_op {
     /* Collective-specific request content */
-    ucs_list_link_t          list;        /**< cache list member */
+    union {
+        ucs_list_link_t      list;        /**< cache list member */
+        struct {
+            ucs_queue_elem_t queue;       /**< pending queue member */
+            ucg_request_t  **pending_req; /**< original invocation request */
+        };
+    };
+
     ucg_plan_t              *plan;        /**< The group this belongs to */
-    ucg_request_t          **pending_req; /**< original invocation request */
     ucg_collective_params_t  params;      /**< original parameters for it */
 
     /* Component-specific request content */

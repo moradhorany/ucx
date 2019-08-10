@@ -39,7 +39,7 @@ struct ucg_group {
     ucg_worker_h       worker;       /* for conn. est. and progress calls */
     ucg_coll_id_t      next_id;      /* for the next collective operation */
     ucg_group_id_t     group_id;     /* group identifier (order of creation) */
-    ucs_list_link_t    pending;      /* requests currently pending execution */
+    ucs_queue_head_t   pending;      /* requests currently pending execution */
     ucg_group_params_t params;       /* parameters, for future connections */
     ucs_list_link_t    list;         /* worker's group list */
 

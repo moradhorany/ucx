@@ -79,7 +79,7 @@ ucs_status_t ucg_group_create(ucg_worker_h worker,
     new_group->group_id               = ctx->next_id++;
     new_group->worker                 = worker;
     new_group->next_id                = 0;
-    ucs_list_head_init(&new_group->pending);
+    ucs_queue_head_init(&new_group->pending);
     memcpy((ucg_group_params_t*)&new_group->params, params, sizeof(*params));
     new_group->params.distance = (typeof(params->distance))((char*)(new_group
             + 1) + ctx->total_planner_sizes);
@@ -132,7 +132,7 @@ const ucg_group_params_t* ucg_group_get_params(ucg_group_h group)
 void ucg_group_destroy(ucg_group_h group)
 {
     /* First - make sure all the collectives are completed */
-    while (!ucs_list_is_empty(&group->pending)) {
+    while (!ucs_queue_is_empty(&group->pending)) {
         ucg_group_progress(group);
     }
 
@@ -285,20 +285,20 @@ ucs_status_t ucg_collective_release_barrier(ucg_group_h group)
 {
     ucs_assert(group->is_barrier_outstanding);
     group->is_barrier_outstanding = 0;
-    if (ucs_list_is_empty(&group->pending)) {
+    if (ucs_queue_is_empty(&group->pending)) {
         return UCS_OK;
     }
 
     ucs_status_t ret;
     do {
         /* Move the operation from the pending queue back to the original one */
-        ucg_op_t *op = ucs_list_extract_head(&group->pending, ucg_op_t, list);
+        ucg_op_t *op = (ucg_op_t*)ucs_queue_pull_non_empty(&group->pending);
+        ucg_request_t **req = op->pending_req;
         ucs_list_add_head(&op->plan->op_head, &op->list);
 
         /* Start this next pending operation */
-        ucg_request_t **req = op->pending_req;
         ret = ucg_collective_trigger(group, op, req);
-    } while ((!ucs_list_is_empty(&group->pending)) &&
+    } while ((!ucs_queue_is_empty(&group->pending)) &&
              (!group->is_barrier_outstanding) &&
              (ret == UCS_OK));
 
@@ -319,7 +319,7 @@ ucg_collective_start(ucg_coll_h coll, ucg_request_t **req)
 
     if (ucs_unlikely(group->is_barrier_outstanding)) {
         ucs_list_del(&op->list);
-        ucs_list_add_tail(&group->pending, &op->list);
+        ucs_queue_push(&group->pending, &op->queue);
         op->pending_req = req;
         ret = UCS_INPROGRESS;
     } else {
