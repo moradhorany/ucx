@@ -101,6 +101,7 @@ UCS_PROFILE_FUNC(ucs_status_t, ucg_builtin_am_handler,
     ucg_builtin_comp_slot_t *slot = &(*ctx)->slots[header->group_id]
         [header->coll_id % UCG_BUILTIN_MAX_CONCURRENT_OPS];
     ucs_assert(header->group_id < (*ctx)->slots_total);
+    ucs_assert(length >= sizeof(header));
 
     /* Consume the message if it fits the current collective and step index */
     ucs_assert((slot->coll_id != header->coll_id) ||

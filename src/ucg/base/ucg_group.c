@@ -84,6 +84,7 @@ ucs_status_t ucg_group_create(ucg_worker_h worker,
     new_group->params.distance = (typeof(params->distance))((char*)(new_group
             + 1) + ctx->total_planner_sizes);
     memcpy(new_group->params.distance, params->distance, distance_size);
+    memset(new_group + 1, 0, ctx->total_planner_sizes);
 
     unsigned idx;
     for (idx = 0; idx < UCG_GROUP_COLLECTIVE_MODIFIER_MASK; idx++) {
@@ -400,7 +401,7 @@ ucs_status_t ucg_init_version(unsigned api_major_version,
                                            params, config, context_p);
     if (status == UCS_OK) {
         size_t ctx_size = sizeof(ucg_groups_t) +
-                ucs_list_length(&ucg_plan_components_list);
+                ucs_list_length(&ucg_plan_components_list) * sizeof(void*);
         status = ucp_extend(*context_p, ctx_size, ucg_worker_groups_init,
                 ucg_worker_groups_cleanup, &ucg_ctx_worker_offset, &ucg_base_am_id);
     }
@@ -414,7 +415,7 @@ ucs_status_t ucg_init(const ucp_params_t *params,
     ucs_status_t status = ucp_init(params, config, context_p);
     if (status == UCS_OK) {
         size_t ctx_size = sizeof(ucg_groups_t) +
-                ucs_list_length(&ucg_plan_components_list);
+                ucs_list_length(&ucg_plan_components_list) * sizeof(void*);
         status = ucp_extend(*context_p, ctx_size, ucg_worker_groups_init,
                 ucg_worker_groups_cleanup, &ucg_ctx_worker_offset, &ucg_base_am_id);
     }
