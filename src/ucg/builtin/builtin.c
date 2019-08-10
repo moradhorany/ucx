@@ -262,12 +262,12 @@ static void ucg_builtin_destroy(ucg_group_h group)
     }
 }
 
-static void ucg_builtin_progress(ucg_group_h group)
+static unsigned ucg_builtin_progress(ucg_group_h group)
 {
     ucg_builtin_group_ctx_t *gctx =
             UCG_GROUP_TO_COMPONENT_CTX(ucg_builtin_component, group);
     if (ucs_likely(ucs_list_is_empty(&gctx->send_head))) {
-        return;
+        return 0;
     }
 
     /*
@@ -275,14 +275,19 @@ static void ucg_builtin_progress(ucg_group_h group)
      * the same list again, the list of pending sends is moved to a temporary
      * head, then drained - each call "resets" the state of that operation.
      */
+    unsigned ret = 0;
     UCS_LIST_HEAD(temp_head);
     ucs_list_splice_tail(&temp_head, &gctx->send_head);
     ucs_list_head_init(&gctx->send_head);
     while (!ucs_list_is_empty(&temp_head)) {
         ucg_builtin_request_t *req = ucs_list_extract_head(&temp_head,
                 ucg_builtin_request_t, send_list);
-        (void) ucg_builtin_step_execute(req, NULL);
+        ucs_status_t status = ucg_builtin_step_execute(req, NULL);
+        if (status != UCS_INPROGRESS) {
+            ret++;
+        }
     }
+    return ret;
 }
 
 ucs_mpool_ops_t ucg_builtin_plan_mpool_ops = {

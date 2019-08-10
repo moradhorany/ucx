@@ -316,7 +316,7 @@ ucg_builtin_step_am_zcopy_max(ucg_builtin_request_t *req,
         if ((_is_rs1 || _is_r1s) && (step->iter_ep == 0)) {                    \
             uint32_t new_cnt = step->iter_ep = _is_r1s ? 1 : phase->ep_cnt - 1;\
             if (_is_pipelined) {                                               \
-                memset(step->fragment_pending, new_cnt, step->fragments);      \
+               memset((void*)step->fragment_pending, new_cnt, step->fragments);\
             }                                                                  \
             if (!is_zcopy) {                                                   \
                 req->pending = new_cnt * step->fragments;                      \
@@ -602,7 +602,7 @@ void ucg_builtin_op_discard(ucg_op_t *op)
             ucs_free(step->zcopy.zcomp);
         }
         if (step->fragment_pending) {
-            ucs_free(step->fragment_pending);
+            ucs_free((void*)step->fragment_pending);
         }
     } while (!((step++)->flags & UCG_BUILTIN_OP_STEP_FLAG_LAST_STEP));
 

@@ -44,11 +44,15 @@ static ucs_stats_class_t ucg_group_stats_class = {
 
 unsigned ucg_group_progress(ucg_group_h group)
 {
-    unsigned idx;
+    unsigned idx, ret = 0;
     ucg_groups_t *gctx = UCG_WORKER_TO_GROUPS_CTX(group->worker);
     for (idx = 0; idx < gctx->num_planners; idx++) {
         ucg_plan_component_t *planc = gctx->planners[idx].plan_component;
-        planc->progress(group);
+        ret += planc->progress(group);
+    }
+
+    if (ret) {
+        return ret;
     }
 
     // TODO: collect all the ifaces and only progress the ones acutally used

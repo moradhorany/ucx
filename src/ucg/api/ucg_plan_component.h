@@ -116,8 +116,8 @@ enum ucg_request_common_flags {
 };
 
 typedef struct ucg_request {
-    uint32_t                 flags;      /**< @ref enum ucg_request_common_flags */
-    ucs_status_t             status;     /**< Operation status */
+    volatile uint32_t        flags;      /**< @ref enum ucg_request_common_flags */
+    volatile ucs_status_t    status;     /**< Operation status */
 } ucg_request_t;
 
 typedef struct ucg_op {
@@ -153,7 +153,7 @@ struct ucg_plan_component {
     /* destroy a group context, along with all its operations and requests */
     void                   (*destroy) (ucg_group_h group);
     /* destroy a group context, along with all its operations and requests */
-    void                   (*progress)(ucg_group_h group);
+    unsigned               (*progress)(ucg_group_h group);
 
     /* plan a collective operation with this component */
     ucs_status_t           (*plan)    (ucg_plan_component_t *plan_component,

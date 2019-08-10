@@ -114,7 +114,7 @@ typedef struct ucg_builtin_op_step {
      * the fragment can be "forwarded" regardless of the other fragments.
      * This optimization is only valid for "*_WAYPOINT" methods. */
 #define UCG_BUILTIN_FRAG_PENDING ((uint8_t)-1)
-    uint8_t                   *fragment_pending;
+    volatile uint8_t          *fragment_pending;
 
     ucg_builtin_comp_send_cb_t send_cb;
     ucg_builtin_comp_recv_cb_t recv_cb;
@@ -143,7 +143,7 @@ struct ucg_builtin_op {
  */
 struct ucg_builtin_request {
     ucg_request_t          super;
-    uint32_t               pending;   /**< number of step's pending messages */
+    volatile uint32_t      pending;   /**< number of step's pending messages */
     ucg_builtin_op_step_t *step;      /**< indicator of current step within the op */
     ucg_builtin_op_t      *op;        /**< operation currently running */
     ucg_request_t         *comp_req;  /**< completion status is written here */
