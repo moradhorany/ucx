@@ -42,21 +42,48 @@ static ucs_stats_class_t ucg_group_stats_class = {
 };
 #endif
 
+#define UCG_GROUP_PROGRESS_ADD(iface, ctx) {         \
+    unsigned idx = 0;                                \
+    if (ucs_unlikely(idx == UCG_GROUP_MAX_IFACES)) { \
+        return UCS_ERR_EXCEEDS_LIMIT;                \
+    }                                                \
+                                                     \
+    while (idx < (ctx)->iface_cnt) {                 \
+        if ((ctx)->ifaces[idx] == (iface)) {         \
+            break;                                   \
+        }                                            \
+    }                                                \
+                                                     \
+    if (idx == (ctx)->iface_cnt) {                   \
+        (ctx)->ifaces[(ctx)->iface_cnt++] = (iface); \
+    }                                                \
+}
+
+unsigned ucg_worker_progress(ucg_worker_h worker)
+{
+    unsigned idx, ret = 0;
+    ucg_groups_t *gctx = UCG_WORKER_TO_GROUPS_CTX(worker);
+    for (idx = 0; idx < gctx->iface_cnt; idx++) {
+        ret += uct_iface_progress(gctx->ifaces[idx]);
+    }
+    return ret;
+}
+
 unsigned ucg_group_progress(ucg_group_h group)
 {
     unsigned idx, ret = 0;
     ucg_groups_t *gctx = UCG_WORKER_TO_GROUPS_CTX(group->worker);
+
     for (idx = 0; idx < gctx->num_planners; idx++) {
         ucg_plan_component_t *planc = gctx->planners[idx].plan_component;
         ret += planc->progress(group);
     }
 
-    if (ret) {
-        return ret;
+    for (idx = 0; idx < group->iface_cnt; idx++) {
+        ret += uct_iface_progress(group->ifaces[idx]);
     }
 
-    // TODO: collect all the ifaces and only progress the ones acutally used
-    return ucp_worker_progress(group->worker);
+    return ret;
 }
 
 unsigned ucg_base_am_id;
@@ -83,6 +110,8 @@ ucs_status_t ucg_group_create(ucg_worker_h worker,
     new_group->group_id               = ctx->next_id++;
     new_group->worker                 = worker;
     new_group->next_id                = 0;
+    new_group->iface_cnt              = 0;
+
     ucs_queue_head_init(&new_group->pending);
     memcpy((ucg_group_params_t*)&new_group->params, params, sizeof(*params));
     new_group->params.distance = (typeof(params->distance))((char*)(new_group
@@ -376,6 +405,7 @@ ucs_status_t ucg_worker_groups_init(void *groups_ctx)
     }
 
     gctx->next_id             = 0;
+    gctx->iface_cnt           = 0;
     gctx->total_planner_sizes = group_ctx_offset;
     ucs_list_head_init(&gctx->groups_head);
     return UCS_OK;
@@ -480,6 +510,11 @@ wait_again:
          ucs_empty_function_return_no_resource) {
         goto wait_again;
     }
+
+    /* Register interfaces to be progressed in future calls */
+    ucg_groups_t *gctx = UCG_WORKER_TO_GROUPS_CTX(group->worker);
+    UCG_GROUP_PROGRESS_ADD((*ep_p)->iface, group);
+    UCG_GROUP_PROGRESS_ADD((*ep_p)->iface, gctx);
 
     // TODO: do it only once per interface type
     *ep_attr_p = ucp_ep_get_am_iface_attr(ucp_ep);

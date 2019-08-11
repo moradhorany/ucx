@@ -40,7 +40,6 @@ BEGIN_C_DECLS
 #define ucg_context_print_info      ucp_context_print_info
 #define ucg_worker_create           ucp_worker_create
 #define ucg_worker_destroy          ucp_worker_destroy
-#define ucg_worker_progress         ucp_worker_progress
 #define ucg_worker_query            ucp_worker_query
 #define ucg_worker_print_info       ucp_worker_print_info
 #define ucg_worker_get_address      ucp_worker_get_address
@@ -218,6 +217,15 @@ void ucg_group_destroy(ucg_group_h group);
  * @param [in]  group       Group object to progress.
  */
 unsigned ucg_group_progress(ucg_group_h group);
+
+
+/**
+ * @ingroup UCG_GROUP
+ * @brief Progresses a Worker object with the groups (UCG) extension.
+ *
+ * @param [in]  group       Group object to progress.
+ */
+unsigned ucg_worker_progress(ucg_worker_h worker);
 
 
 /**

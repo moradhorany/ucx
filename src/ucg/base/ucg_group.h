@@ -10,6 +10,8 @@
 
 #include <ucs/stats/stats.h>
 
+#define UCG_GROUP_MAX_IFACES (8)
+
 extern size_t ucg_ctx_worker_offset;
 #define UCG_WORKER_TO_GROUPS_CTX(worker) \
     ((ucg_groups_t*)((char*)(worker) + ucg_ctx_worker_offset))
@@ -24,6 +26,10 @@ extern size_t ucg_ctx_worker_offset;
 typedef struct ucg_groups {
     ucs_list_link_t       groups_head;
     ucg_group_id_t        next_id;
+
+    unsigned              iface_cnt;
+    uct_iface_h           ifaces[UCG_GROUP_MAX_IFACES];
+
     size_t                total_planner_sizes;
     unsigned              num_planners;
     ucg_plan_desc_t      *planners;
@@ -44,6 +50,9 @@ struct ucg_group {
     ucs_list_link_t    list;         /* worker's group list */
 
     UCS_STATS_NODE_DECLARE(stats);
+
+    unsigned           iface_cnt;
+    uct_iface_h        ifaces[UCG_GROUP_MAX_IFACES];
 
     /* per-group cache of previous plans/operations, arranged as follows:
      * for each collective type (e.g. Allreduce) there is a plan with a list of
