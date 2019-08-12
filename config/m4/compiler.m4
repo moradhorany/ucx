@@ -282,6 +282,13 @@ AS_IF([test "x$with_avx" != xyes],
       ])
 
 
+#
+# CLWB
+#
+COMPILER_OPTION([clwb], [CLWB], [-mclwb], [$enable_optimizations],
+                [int main() { int* a; asm volatile("clwb %0" :: "m" (a)); return 0; }])
+
+
 DETECT_UARCH()
 
 #

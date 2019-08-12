@@ -259,6 +259,9 @@ int ucs_arch_get_cpu_flag()
             if ((result & UCS_CPU_FLAG_AVX) && (_ebx & (1 << 5))) {
                 result |= UCS_CPU_FLAG_AVX2;
             }
+            if (_ebx & (1 << 24)) {
+                result |= UCS_CPU_FLAG_CLWB;
+            }
         }
         cpu_flag = result;
     }

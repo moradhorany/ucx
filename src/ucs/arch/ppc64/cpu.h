@@ -69,6 +69,11 @@ static inline void ucs_arch_clear_cache(void *start, void *end)
 }
 #endif
 
+static inline void ucs_arch_writeback_cache(void *start, void *end)
+{
+    ucs_memory_cpu_fence();
+}
+
 END_C_DECLS
 
 #endif

@@ -13,5 +13,6 @@
 basedir=$(cd $(dirname $0) && pwd)
 $basedir/configure-release \
 	--with-avx \
+	--with-clwb \
 	--with-sse41 \
 	"$@"

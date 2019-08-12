@@ -195,6 +195,8 @@ static inline ucs_status_t uct_mm_ep_get_remote_elem(uct_mm_ep_t *ep, uint64_t h
         return UCS_ERR_NO_RESOURCE;
     }
 
+    ucs_writeback_cache(ucs_unaligned_ptr(&ep->fifo_ctl->head),
+                        ucs_unaligned_ptr(&ep->fifo_ctl->head + 1));
     return UCS_OK;
 }
 
@@ -295,6 +297,7 @@ retry:
     }
 
     if (is_short) {
+        ucs_clear_cache(elem + 1, (char*)(elem + 1) + length);
         return UCS_OK;
     } else {
         return length;

@@ -38,6 +38,7 @@ static UCS_F_NOOPTIMIZE void ucs_check_cpu_flags(void)
         { "sse42", UCS_CPU_FLAG_SSE42 },
         { "avx", UCS_CPU_FLAG_AVX },
         { "avx2", UCS_CPU_FLAG_AVX2 },
+        { "clwb", UCS_CPU_FLAG_CLWB },
         { NULL, UCS_CPU_FLAG_UNKNOWN },
     };
 
