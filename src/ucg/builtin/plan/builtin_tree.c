@@ -283,7 +283,8 @@ ucs_status_t ucg_builtin_tree_add_intra(const ucg_builtin_tree_params_t *params,
             } else {
                 first_distance = UCG_GROUP_MEMBER_DISTANCE_LAST;
             }
-            down[down_cnt++] = member_idx;
+            down[down_cnt++] = down[0];
+            down[0]          = member_idx;
             if (down_cnt == UCG_BUILTIN_TREE_MAX_RADIX) {
                 goto limit_exceeded;
             }
