@@ -601,7 +601,8 @@ void ucg_builtin_op_discard(ucg_op_t *op)
             uct_md_mem_dereg(step->uct_md, step->zcopy.memh);
             ucs_free(step->zcopy.zcomp);
         }
-        if (step->fragment_pending) {
+
+        if (step->flags & UCG_BUILTIN_OP_STEP_FLAG_PIPELINED) {
             ucs_free((void*)step->fragment_pending);
         }
     } while (!((step++)->flags & UCG_BUILTIN_OP_STEP_FLAG_LAST_STEP));
@@ -667,19 +668,19 @@ ucg_builtin_step_send_flags(ucg_builtin_op_step_t *step,
 {
     size_t length = step->buffer_length;
     size_t dt_len = params->send.dt_len;
+
     /*
      * Short messages (e.g. RDMA "inline")
      */
-    if (length <= phase->max_short_one) {
+    if (ucs_likely(length <= phase->max_short_one)) {
         /* Short send - single message */
         *send_flag            = UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SHORT;
         step->fragments       = 1;
-    } else if (length <= phase->max_short_max) {
+    } else if (ucs_likely(length <= phase->max_short_max)) {
         /* Short send - multiple messages */
         *send_flag = (enum ucg_builtin_op_step_flags)
                      (UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SHORT |
                       UCG_BUILTIN_OP_STEP_FLAG_FRAGMENTED);
-
         step->fragment_length = phase->max_short_one -
                                (phase->max_short_one % dt_len);
         step->fragments       = length / step->fragment_length +
@@ -688,9 +689,9 @@ ucg_builtin_step_send_flags(ucg_builtin_op_step_t *step,
     /*
      * Large messages, if supported (e.g. RDMA "zero-copy")
      */
-    } else if ((length >  phase->max_bcopy_max) &&
-               (length <= phase->md_attr->cap.max_reg)) {
-        if (length < phase->max_zcopy_one) {
+    } else if (ucs_unlikely((length >  phase->max_bcopy_max) &&
+                            (phase->md_attr->cap.max_reg))) {
+        if (ucs_likely(length < phase->max_zcopy_one)) {
             /* ZCopy send - single message */
             *send_flag            = UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_ZCOPY;
             step->fragments       = 1;
@@ -714,7 +715,7 @@ ucg_builtin_step_send_flags(ucg_builtin_op_step_t *step,
     /*
      * Medium messages
      */
-    } else if (length <= phase->max_bcopy_one) {
+    } else if (ucs_likely(length <= phase->max_bcopy_one)) {
         /* BCopy send - single message */
         *send_flag = UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BCOPY;
         step->fragment_length = step->buffer_length;
