@@ -499,6 +499,7 @@ ucs_status_t ucg_builtin_connect(ucg_builtin_group_ctx_t *ctx,
 #endif
     if (!ep) {
         phase->max_short_one = UCS_CONFIG_MEMUNITS_INF;
+        phase->md = NULL;
         return UCS_OK;
     }
 
