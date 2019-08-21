@@ -114,7 +114,7 @@ ucs_status_t ucg_builtin_recursive_create(ucg_builtin_group_ctx_t *ctx,
     /* Allocate memory resources */
     size_t alloc_size               = sizeof(ucg_builtin_plan_t) +
                                       (alloc_phases * sizeof(ucg_builtin_plan_phase_t)) +
-                                      (alloc_eps   * sizeof(uct_ep_h));
+                                      (alloc_eps    * sizeof(uct_ep_h));
     ucg_builtin_plan_t *recursive   = (ucg_builtin_plan_t*)UCS_ALLOC_CHECK(alloc_size,
                                                                            "recursive topology");
     ucg_builtin_plan_phase_t *phase = &recursive->phss[0];
@@ -167,7 +167,9 @@ ucs_status_t ucg_builtin_recursive_create(ucg_builtin_group_ctx_t *ctx,
                 ucs_info("%lu's peer #%u/%u (step #%u/%u): %lu ", my_index,
                          step_peer_idx, factor - 1, step_idx + 1,
                          recursive->phs_cnt, peer_index);
-                phase->multi_eps = next_ep++;
+                if (factor != 2) {
+                    phase->multi_eps = next_ep++;
+                }
                 status = ucg_builtin_connect(ctx, peer_index, phase, (factor != 2) ?
                         (step_peer_idx - 1) : UCG_BUILTIN_CONNECT_SINGLE_EP);
             }

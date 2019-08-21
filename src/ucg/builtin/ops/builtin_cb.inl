@@ -406,6 +406,7 @@ static inline ucs_status_t ucg_builtin_step_zcopy_prep(ucg_builtin_op_step_t *st
 {
     /* Allocate callback context for zero-copy sends */
     uint32_t zcomp_cnt         = step->phase->ep_cnt * step->fragments;
+    step->zcopy.memh           = NULL; /* - in case the allocation fails... */
     ucg_builtin_zcomp_t *zcomp =
              step->zcopy.zcomp = (ucg_builtin_zcomp_t*)UCS_ALLOC_CHECK(zcomp_cnt *
                      sizeof(*zcomp), "ucg_zcopy_completion");
@@ -431,15 +432,16 @@ static ucs_status_t ucg_builtin_optimize_bcopy_to_zcopy(ucg_builtin_op_t *op)
 {
     /* This function was called because we want to "upgrade" a bcopy-send to
      * zcopy, by way of memory registration (costly, but hopefully worth it) */
+    ucs_status_t status;
     ucg_builtin_op_step_t *step;
     ucg_step_idx_t step_idx = 0;
     do {
         step = &op->steps[step_idx++];
         if ((step->flags & UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BCOPY) &&
             (step->phase->md_attr->cap.max_reg > step->buffer_length)) {
-            ucs_status_t status = ucg_builtin_step_zcopy_prep(step);
+            status = ucg_builtin_step_zcopy_prep(step);
             if (status != UCS_OK) {
-                return status;
+                goto bcopy_to_zcopy_cleanup;
             }
 
             step->flags &= ~UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BCOPY;
@@ -451,6 +453,14 @@ static ucs_status_t ucg_builtin_optimize_bcopy_to_zcopy(ucg_builtin_op_t *op)
     } while (!(step->flags & UCG_BUILTIN_OP_STEP_FLAG_LAST_STEP));
 
     return UCS_OK;
+
+bcopy_to_zcopy_cleanup:
+    while (step_idx) {
+        if (step->zcopy.memh) {
+
+        }
+    }
+    return status;
 }
 
 static ucs_status_t ucg_builtin_no_optimization(ucg_builtin_op_t *op)
