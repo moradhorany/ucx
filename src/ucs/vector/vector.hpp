@@ -237,25 +237,35 @@ UCS_VECTOR_MPI_OP_SLOT(_name, _op_id, UCS_VECTOR_MPI_UINT64_T, _type)           
      UCS_VECTOR_MPI_SET_DATATYPES(_name, _op_id, _op, _fixed_,     _fixed_size) \
      UCS_VECTOR_MPI_SET_DATATYPES(_name, _op_id, _op, _unaligned_, _fixed_size)
 
-#define UCG_VECTOR_FIXED_DECLARE_ONE(_size_in_bytes, _action)                  \
+#define UCG_VECTOR_FIXED_DECLARE_ONE(_action, _size, _type, _params, _args)    \
 static inline int                                                              \
-ucs_vector_fixed_ ## _action ## _size_in_bytes(const void* x, const void* y)   \
+ucs_vector_ ## _action _params                                                 \
 {                                                                              \
-    return mipp::mem ## _action ## _fixed<_size_in_bytes, int32_t>             \
-        ((int32_t*)x, (int32_t*)y);                                            \
-}
-
-#define UCG_VECTOR_FIXED_DECLARE_ONE_SET(_size_in_bytes)                       \
-static inline void                                                             \
-ucs_vector_fixed_memset ## _size_in_bytes(void* ptr, int8_t content)           \
+    return mipp::mem ## _action ## _ <_type> _args;                            \
+}                                                                              \
+                                                                               \
+static inline int                                                              \
+ucs_vector_unaligned_ ## _action _params                                       \
 {                                                                              \
-    mipp::memset_fixed<_size_in_bytes, int8_t>((int8_t*)ptr, content);         \
+    return mipp::mem ## _action ## _unaligned <_type> _args;                   \
+}                                                                              \
+                                                                               \
+static inline int                                                              \
+ucs_vector_fixed_ ## _action ## _size _params                                  \
+{                                                                              \
+    return mipp::mem ## _action ## _fixed <_size, _type> _args;                \
 }
 
 #define UCG_VECTOR_FIXED_DECLARE(_size_in_bytes)                               \
-        UCG_VECTOR_FIXED_DECLARE_ONE_SET(_size_in_bytes)                       \
-        UCG_VECTOR_FIXED_DECLARE_ONE(_size_in_bytes, move)                     \
-        UCG_VECTOR_FIXED_DECLARE_ONE(_size_in_bytes, cmp)
+        UCG_VECTOR_FIXED_DECLARE_ONE(set, _size_in_bytes, int8_t,              \
+                (void* ptr, int8_t content, size_t length),                    \
+                ((int8_t*)ptr, content, length))                               \
+        UCG_VECTOR_FIXED_DECLARE_ONE(cpy, _size_in_bytes, int32_t,             \
+                (void* dst, const void* src, size_t length),                   \
+                ((int32_t*)dst, (int32_t*)src, length))                        \
+        UCG_VECTOR_FIXED_DECLARE_ONE(cmp, _size_in_bytes, int32_t,             \
+                (const void* x, const void* y, size_t length),                 \
+                ((int32_t*)x, (int32_t*)y, length))
 
 #define UCG_VECTOR_FIXED_CALL(_size_in_bytes, _type) \
         ucs_vector_fixed_ ## _type ## _size_in_bytes
@@ -300,6 +310,23 @@ static inline int ucs_vector_mpi_reduce_ ## _name(int is_full_fragment,        \
                                                                                \
     op_f(src_buffer, dst_buffer, dcount);                                      \
     return 0;                                                                  \
+}                                                                              \
+                                                                               \
+/* This function copies data between the source and destination buffers. */    \
+static inline void ucs_vector_memcpy_ ## _name (void *dst_buffer,              \
+        const void *src_buffer, unsigned length)                               \
+{                                                                              \
+    if (ucs_unlikely((!UCS_VECTOR_MPI_IS_PTR_ALIGNED(src_buffer)) ||           \
+                     (!UCS_VECTOR_MPI_IS_PTR_ALIGNED(dst_buffer)))) {          \
+        (void) ucs_vector_unaligned_cpy (dst_buffer, src_buffer, length);      \
+    } else {                                                                   \
+        if (length == _size_in_bytes) {                                        \
+            (void) UCG_VECTOR_FIXED_CALL(_size_in_bytes, cpy)                  \
+                (dst_buffer, src_buffer, length /* ignored*/ );                \
+        } else {                                                               \
+            (void) ucs_vector_cpy (dst_buffer, src_buffer, length);            \
+        }                                                                      \
+    }                                                                          \
 }                                                                              \
                                                                                \
 /* This function is a place-holder for a future implementation of    */        \

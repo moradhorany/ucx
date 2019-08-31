@@ -1223,7 +1223,7 @@ static inline void memreduce_unaligned(T *inout, const T *in, const size_t dataS
 }
 
 template <int Size, typename T, red_op<T> OP1, Red_op<T> OP2>
-static inline void memreduce_fixed(T *inout, const T *in)
+static inline void memreduce_fixed(T *inout, const T *in, const size_t dataSize)
 {
     size_t i;
     for (i = 0; i < Size; i += mipp::nElReg<T>())
@@ -1231,7 +1231,7 @@ static inline void memreduce_fixed(T *inout, const T *in)
 }
 
 template <typename T>
-static inline void memset_(T *buffer, const T content, const size_t dataSize)
+static inline int memset_(T *buffer, const T content, const size_t dataSize)
 {
     size_t i, roundedSize = dataSize - (dataSize % mipp::nElReg<T>());
 
@@ -1248,10 +1248,12 @@ static inline void memset_(T *buffer, const T content, const size_t dataSize)
     for (; i < dataSize; i++) {
         Writer.store(&buffer[i]);
     }
+
+    return 0;
 }
 
 template <typename T>
-static inline void memset_unaligned(T *buffer, const T content, const size_t dataSize)
+static inline int memset_unaligned(T *buffer, const T content, const size_t dataSize)
 {
     size_t i, roundedSize = dataSize - (dataSize % mipp::nElReg<T>());
 
@@ -1268,10 +1270,12 @@ static inline void memset_unaligned(T *buffer, const T content, const size_t dat
     for (; i < dataSize; i++) {
         Writer.storeu(&buffer[i]);
     }
+
+    return 0;
 }
 
 template <int Size, typename T>
-static inline void memset_fixed(T *buffer, const T content)
+static inline int memset_fixed(T *buffer, const T content, const size_t dataSize)
 {
     size_t i;
 
@@ -1284,6 +1288,8 @@ static inline void memset_fixed(T *buffer, const T content)
     reg writer = mipp::set<T>(initial);
     for (i = 0; i < Size; i += mipp::nElReg<T>())
         mipp::store<T>(&buffer[i], writer);
+
+    return 0;
 }
 
 // TODO: use optimizations similarly to the FastMemcpy library:
@@ -1294,7 +1300,7 @@ static inline int memcmp_(const T *x, const T *y, const size_t dataSize)
 {
     // TODO: support non-rounded dataSize
     // TODO: change testz<4> to depend on T
-    for (int i = 0; i < (dataSize / mipp::nElReg<T>()); i += mipp::nElReg<T>()) {
+    for (unsigned i = 0; i < (dataSize / mipp::nElReg<T>()); i += mipp::nElReg<T>()) {
         if (mipp::testz<4>(mipp::cmpeq<T>(mipp::load<T>(&x[i]),
                                           mipp::load<T>(&y[i])))) {
             return -1;
@@ -1308,7 +1314,7 @@ static inline int memcmp_unaligned(const T *x, const T *y, const size_t dataSize
 {
     // TODO: support non-rounded dataSize
     // TODO: change testz<4> to depend on T
-    for (int i = 0; i < (dataSize / mipp::nElReg<T>()); i += mipp::nElReg<T>()) {
+    for (unsigned i = 0; i < (dataSize / mipp::nElReg<T>()); i += mipp::nElReg<T>()) {
         if (mipp::testz<4>(mipp::cmpeq<T>(mipp::loadu<T>(&x[i]),
                                           mipp::loadu<T>(&y[i])))) {
             return -1;
@@ -1318,10 +1324,10 @@ static inline int memcmp_unaligned(const T *x, const T *y, const size_t dataSize
 }
 
 template <int Size, typename T>
-static inline int memcmp_fixed(const T *x, const T *y)
+static inline int memcmp_fixed(const T *x, const T *y, const size_t dataSize)
 {
     // TODO: change testz<4> to depend on T
-    for (int i = 0; i < (Size / mipp::nElReg<T>()); i += mipp::nElReg<T>()) {
+    for (unsigned i = 0; i < (Size / mipp::nElReg<T>()); i += mipp::nElReg<T>()) {
         if (mipp::testz<4>(mipp::cmpeq<T>(mipp::load<T>(&x[i]),
                                           mipp::load<T>(&y[i])))) {
             return -1;
@@ -1331,27 +1337,27 @@ static inline int memcmp_fixed(const T *x, const T *y)
 }
 
 template <typename T>
-static inline int memmove_(T *dst, const T *src, const size_t dataSize)
+static inline int memcpy_(T *dst, const T *src, const size_t dataSize)
 {
     // TODO: support non-rounded dataSize
-    for (int i = 0; i < (dataSize / mipp::nElReg<T>()); i += mipp::nElReg<T>())
+    for (unsigned i = 0; i < (dataSize / mipp::nElReg<T>()); i += mipp::nElReg<T>())
         mipp::store(&dst[i], mipp::load<T>(&src[i]));
     return 0;
 }
 
 template <typename T>
-static inline int memmove_unaligned(T *dst, const T *src, const size_t dataSize)
+static inline int memcpy_unaligned(T *dst, const T *src, const size_t dataSize)
 {
     // TODO: support non-rounded dataSize
-    for (int i = 0; i < (dataSize / mipp::nElReg<T>()); i += mipp::nElReg<T>())
+    for (unsigned i = 0; i < (dataSize / mipp::nElReg<T>()); i += mipp::nElReg<T>())
         mipp::storeu(&dst[i], mipp::loadu<T>(&src[i]));
     return 0;
 }
 
 template <int Size, typename T>
-static inline int memmove_fixed(T *dst, const T *src)
+static inline int memcpy_fixed(T *dst, const T *src, const size_t dataSize)
 {
-    for (int i = 0; i < (Size / mipp::nElReg<T>()); i += mipp::nElReg<T>())
+    for (unsigned i = 0; i < (Size / mipp::nElReg<T>()); i += mipp::nElReg<T>())
         mipp::store(&dst[i], mipp::load<T>(&src[i]));
     return 0;
 }

@@ -13,6 +13,7 @@ endif
 noinst_LTLIBRARIES         = libucg_builtin.la
 libucg_builtin_la_CFLAGS   = $(BASE_CFLAGS)
 libucg_builtin_la_CPPFLAGS = $(BASE_CPPFLAGS)
+libucg_builtin_la_CXXFLAGS = $(BASE_CXXFLAGS) -Wno-error
 
 noinst_HEADERS = \
 	ops/builtin_ops.h \
