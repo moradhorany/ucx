@@ -28,7 +28,7 @@ static void UCS_F_ALWAYS_INLINE ucg_builtin_mpi_reduce(int is_full_fragment,
     }
 #endif
 
-UCS_PROFILE_CALL_VOID(ucg_builtin_mpi_reduce_cb, mpi_op, (char*)src,
+    UCS_PROFILE_CALL_VOID(ucg_builtin_mpi_reduce_cb, mpi_op, (char*)src,
             (char*)dst, dcount, mpi_datatype);
 }
 
@@ -47,6 +47,16 @@ UCS_PROFILE_CALL_VOID(ucg_builtin_mpi_reduce_cb, mpi_op, (char*)src,
     ucg_builtin_mpi_reduce(length == UCG_FRAGMENT_SIZE, params->recv.op_ext,   \
                            _data, (_req)->step->recv_buffer + offset,          \
                            length / params->recv.dt_len, params->recv.dt_ext); \
+}
+
+static void UCS_F_ALWAYS_INLINE ucg_builtin_memcpy(void *src, void *dst, size_t length)
+{
+#if HAVE_OMPI_SRC
+    UCS_PROFILE_CALL_VOID(ucs_vector_memcpy_builtin, src, dst, length);
+    return;
+#endif
+
+    UCS_PROFILE_CALL_VOID(memcpy, (char*)src, (char*)dst, length);
 }
 
 void static UCS_F_ALWAYS_INLINE
@@ -148,7 +158,8 @@ ucg_builtin_comp_send_check_frag_cb(ucg_builtin_request_t *req, uint64_t offset)
 static int ucg_builtin_comp_recv_one_cb(ucg_builtin_request_t *req,
         uint64_t offset, void *data, size_t length)
 {
-    memcpy(req->step->recv_buffer, data, length);
+    ucs_assert(offset == 0);
+    ucg_builtin_memcpy(req->step->recv_buffer, data, length);
     (void) ucg_builtin_comp_step_cb(req, NULL);
     return 1;
 }
@@ -156,7 +167,8 @@ static int ucg_builtin_comp_recv_one_cb(ucg_builtin_request_t *req,
 static int ucg_builtin_comp_recv_one_then_send_cb(ucg_builtin_request_t *req,
         uint64_t offset, void *data, size_t length)
 {
-    memcpy(req->step->recv_buffer, data, length);
+    ucs_assert(offset == 0);
+    ucg_builtin_memcpy(req->step->recv_buffer, data, length);
     (void) ucg_builtin_step_execute(req, NULL);
     return 1;
 }
@@ -164,27 +176,29 @@ static int ucg_builtin_comp_recv_one_then_send_cb(ucg_builtin_request_t *req,
 static int ucg_builtin_comp_recv_many_cb(ucg_builtin_request_t *req,
         uint64_t offset, void *data, size_t length)
 {
-    memcpy(req->step->recv_buffer + offset, data, length);
+    ucg_builtin_memcpy(req->step->recv_buffer + offset, data, length);
     return ucg_builtin_comp_step_check_cb(req);
 }
 
 static int ucg_builtin_comp_recv_many_then_send_pipe_cb(ucg_builtin_request_t *req,
         uint64_t offset, void *data, size_t length)
 {
-    memcpy(req->step->recv_buffer + offset, data, length);
+    ucg_builtin_memcpy(req->step->recv_buffer + offset, data, length);
     return ucg_builtin_comp_send_check_frag_cb(req, offset);
 }
 
 static int ucg_builtin_comp_recv_many_then_send_cb(ucg_builtin_request_t *req,
         uint64_t offset, void *data, size_t length)
 {
-    memcpy(req->step->recv_buffer + offset, data, length);
+    ucg_builtin_memcpy(req->step->recv_buffer + offset, data, length);
     return ucg_builtin_comp_send_check_cb(req);
 }
 
 UCS_PROFILE_FUNC(int, ucg_builtin_comp_reduce_one_cb, (req, offset, data, length),
                  ucg_builtin_request_t *req, uint64_t offset, void *data, size_t length)
 {
+    ucs_assert(offset == 0);
+    ucs_assert(length == req->step->buffer_length);
     ucg_builtin_mpi_reduce_full(req, offset, data, length, &req->op->super.params);
     (void) ucg_builtin_comp_step_cb(req, NULL);
     return 1;
@@ -193,6 +207,8 @@ UCS_PROFILE_FUNC(int, ucg_builtin_comp_reduce_one_cb, (req, offset, data, length
 static int ucg_builtin_comp_reduce_one_then_send_cb(ucg_builtin_request_t *req,
         uint64_t offset, void *data, size_t length)
 {
+    ucs_assert(offset == 0);
+    ucs_assert(length == req->step->buffer_length);
     ucg_builtin_mpi_reduce_full(req, offset, data, length, &req->op->super.params);
     (void) ucg_builtin_step_execute(req, NULL);
     return 1;
@@ -222,6 +238,8 @@ static int ucg_builtin_comp_reduce_many_then_send_cb(ucg_builtin_request_t *req,
 static int ucg_builtin_comp_wait_one_cb(ucg_builtin_request_t *req,
         uint64_t offset, void *data, size_t length)
 {
+    ucs_assert(offset == 0);
+    ucs_assert(length == 0);
     (void) ucg_builtin_comp_step_cb(req, NULL);
     return 1;
 }
@@ -229,6 +247,8 @@ static int ucg_builtin_comp_wait_one_cb(ucg_builtin_request_t *req,
 static int ucg_builtin_comp_wait_one_then_send_cb(ucg_builtin_request_t *req,
         uint64_t offset, void *data, size_t length)
 {
+    ucs_assert(offset == 0);
+    ucs_assert(length == 0);
     (void) ucg_builtin_step_execute(req, NULL);
     return 1;
 }
@@ -236,18 +256,24 @@ static int ucg_builtin_comp_wait_one_then_send_cb(ucg_builtin_request_t *req,
 static int ucg_builtin_comp_wait_many_cb(ucg_builtin_request_t *req,
         uint64_t offset, void *data, size_t length)
 {
+    ucs_assert(offset == 0);
+    ucs_assert(length == 0);
     return ucg_builtin_comp_step_check_cb(req);
 }
 
 static int ucg_builtin_comp_wait_many_then_send_cb(ucg_builtin_request_t *req,
         uint64_t offset, void *data, size_t length)
 {
+    ucs_assert(offset == 0);
+    ucs_assert(length == 0);
     return ucg_builtin_comp_send_check_cb(req);
 }
 
 static int ucg_builtin_comp_last_barrier_step_one_cb(ucg_builtin_request_t *req,
         uint64_t offset, void *data, size_t length)
 {
+    ucs_assert(offset == 0);
+    ucs_assert(length == 0);
     (void) ucg_builtin_comp_step_cb(req, NULL);
     ucg_collective_release_barrier(req->op->super.plan->group);
     return 1;
@@ -371,6 +397,7 @@ ucs_status_t ucg_builtin_op_select_callback(ucg_builtin_plan_t *plan,
     switch (plan->phss[0].method) {
     case UCG_PLAN_METHOD_REDUCE_WAYPOINT:
     case UCG_PLAN_METHOD_REDUCE_TERMINAL:
+    case UCG_PLAN_METHOD_REDUCE_RECURSIVE:
         *init_cb = ucg_builtin_init_reduce;
         break;
 
@@ -419,7 +446,9 @@ static inline ucs_status_t ucg_builtin_step_zcopy_prep(ucg_builtin_op_step_t *st
     }
 
     /* Register the buffer, creating a memory handle used in zero-copy sends */
-    ucs_status_t status = uct_md_mem_reg(step->uct_md, step->send_buffer,
+    int8_t *sbuf = (step->flags & UCG_BUILTIN_OP_STEP_FLAG_SEND_FROM_RECV_BUF) ?
+            step->recv_buffer : step->send_buffer;
+    ucs_status_t status = uct_md_mem_reg(step->uct_md, sbuf,
             step->buffer_length, UCT_MD_MEM_ACCESS_ALL, &step->zcopy.memh);
     if (status != UCS_OK) {
         ucs_free(zcomp);
