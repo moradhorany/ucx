@@ -67,11 +67,12 @@ enum ucg_builtin_op_step_flags {
     UCG_BUILTIN_OP_STEP_FLAG_LENGTH_PER_REQUEST = UCS_BIT(6),
     UCG_BUILTIN_OP_STEP_FLAG_FRAGMENTED         = UCS_BIT(7),
     UCG_BUILTIN_OP_STEP_FLAG_PIPELINED          = UCS_BIT(8),
+    UCG_BUILTIN_OP_STEP_FLAG_SEND_FROM_RECV_BUF = UCS_BIT(9),
 
     /* Send types */
-    UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SHORT      = UCS_BIT(9),
-    UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BCOPY      = UCS_BIT(10),
-    UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_ZCOPY      = UCS_BIT(11),
+    UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SHORT      = UCS_BIT(10),
+    UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BCOPY      = UCS_BIT(11),
+    UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_ZCOPY      = UCS_BIT(12),
 };
 
 /* Definitions of several callback functions, used during an operation */
@@ -160,7 +161,8 @@ ucs_status_t ucg_builtin_step_create (ucg_builtin_plan_phase_t *phase,
 ucs_status_t ucg_builtin_step_execute(ucg_builtin_request_t *req,
                                       ucg_request_t **user_req);
 ucs_status_t ucg_builtin_step_select_callbacks(ucg_builtin_plan_phase_t *phase,
-        ucg_builtin_comp_recv_cb_t *recv_cb, int nonzero_length, int flags);
+        ucg_builtin_comp_recv_cb_t *recv_cb, int nonzero_length, int flags,
+        int is_temporary_buffer);
 ucs_status_t ucg_builtin_op_select_callback(ucg_builtin_plan_t *plan,
         ucg_builtin_op_init_cb_t *init_cb);
 ucs_status_t ucg_builtin_op_consider_optimization(ucg_builtin_op_t *op);
