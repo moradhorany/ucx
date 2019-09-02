@@ -75,7 +75,9 @@ static ucs_status_t ucg_builtin_query(unsigned ucg_api_version,
     return status;
 }
 
-static enum ucg_builtin_plan_topology_type ucg_builtin_choose_type(enum ucg_collective_modifiers flags)
+static enum ucg_builtin_plan_topology_type
+ucg_builtin_choose_type(enum ucg_collective_modifiers flags,
+                        ucg_group_member_index_t group_size)
 {
     if (flags & UCG_GROUP_COLLECTIVE_MODIFIER_SINGLE_SOURCE) {
         return UCG_PLAN_TREE_FANOUT;
@@ -86,6 +88,10 @@ static enum ucg_builtin_plan_topology_type ucg_builtin_choose_type(enum ucg_coll
     }
 
     if (flags & UCG_GROUP_COLLECTIVE_MODIFIER_AGGREGATE) {
+        if (__builtin_popcountl(group_size) > 1) {
+            /* Not a power of two */
+            return UCG_PLAN_TREE_FANIN_FANOUT;
+        }
         return UCG_PLAN_RECURSIVE;
     }
 
@@ -307,7 +313,8 @@ static ucs_status_t ucg_builtin_plan(ucg_plan_component_t *plan_component,
     ucg_builtin_group_ctx_t *builtin_ctx =
             UCG_GROUP_TO_COMPONENT_CTX(ucg_builtin_component, group);
     enum ucg_builtin_plan_topology_type plan_topo_type =
-            ucg_builtin_choose_type(coll_type->modifiers);
+            ucg_builtin_choose_type(coll_type->modifiers,
+                    builtin_ctx->group_params->member_count);
 
     /* Build the topology according to the requested */
     switch(plan_topo_type) {
