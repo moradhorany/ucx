@@ -526,13 +526,17 @@ ucs_status_t ucg_builtin_connect(ucg_builtin_group_ctx_t *ctx,
     }
 
     phase->max_bcopy_one = phase->ep_attr->cap.am.max_bcopy - sizeof(ucg_builtin_header_t);
-    phase->max_bcopy_max = ctx->config->bcopy_max_tx;
-    // TODO: support UCS_CONFIG_MEMUNITS_AUTO
     if (phase->md_attr->cap.max_reg) {
+        phase->max_bcopy_max = ctx->config->bcopy_max_tx;
+        // TODO: support UCS_CONFIG_MEMUNITS_AUTO
         if (phase->max_bcopy_one > phase->max_bcopy_max) {
             phase->max_bcopy_one = phase->max_bcopy_max;
         }
+
         phase->max_zcopy_one = phase->ep_attr->cap.am.max_zcopy - sizeof(ucg_builtin_header_t);
+        if (phase->max_zcopy_one < phase->max_bcopy_max) {
+            phase->max_zcopy_one = phase->max_bcopy_max;
+        }
     } else {
         // TODO: issue a warning?
         phase->max_zcopy_one = phase->max_bcopy_max = UCS_CONFIG_MEMUNITS_INF;
