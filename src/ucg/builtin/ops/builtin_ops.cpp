@@ -377,7 +377,7 @@ ucg_builtin_step_am_zcopy_max(ucg_builtin_request_t *req,
             }                                                                  \
             if (!is_zcopy) {                                                   \
                 req->pending = new_cnt * step->fragments;                      \
-            }                                                                  \
+            } /* Otherwise default init of ep_cnt*num_fragments is correct */  \
             break; /* Beyond the switch-case we fall-back to receiving */      \
         }                                                                      \
                                                                                \
