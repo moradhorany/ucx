@@ -111,13 +111,13 @@ ucg_builtin_comp_step_cb(ucg_builtin_request_t *req,
     return ucg_builtin_step_execute(req, user_req);
 }
 
-#define UCG_IF_LAST_MESSAGE(req) \
-    ucs_assert(req->pending > 0); if (--req->pending == 0)\
+#define UCG_IF_PENDING_REACHED(req, num) \
+    ucs_assert(req->pending > (num)); if (--req->pending == (num))
 
 int static UCS_F_ALWAYS_INLINE
 ucg_builtin_comp_step_check_cb(ucg_builtin_request_t *req)
 {
-    UCG_IF_LAST_MESSAGE(req) {
+    UCG_IF_PENDING_REACHED(req, 0) {
         (void) ucg_builtin_comp_step_cb(req, NULL);
         return 1;
     }
@@ -126,9 +126,9 @@ ucg_builtin_comp_step_check_cb(ucg_builtin_request_t *req)
 }
 
 int static UCS_F_ALWAYS_INLINE
-ucg_builtin_comp_send_check_cb(ucg_builtin_request_t *req)
+ucg_builtin_comp_send_check_cb(ucg_builtin_request_t *req, uint32_t pending)
 {
-    UCG_IF_LAST_MESSAGE(req) {
+    UCG_IF_PENDING_REACHED(req, pending) {
         (void) ucg_builtin_step_execute(req, NULL);
         return 1;
     }
@@ -184,14 +184,37 @@ static int ucg_builtin_comp_recv_many_then_send_pipe_cb(ucg_builtin_request_t *r
         uint64_t offset, void *data, size_t length)
 {
     ucg_builtin_memcpy(req->step->recv_buffer + offset, data, length);
+    /* if num_fragments arrived - start sending! */
     return ucg_builtin_comp_send_check_frag_cb(req, offset);
 }
 
-static int ucg_builtin_comp_recv_many_then_send_cb(ucg_builtin_request_t *req,
+static int ucg_builtin_comp_recv1_many_then_send_zcopy_cb(ucg_builtin_request_t *req,
         uint64_t offset, void *data, size_t length)
 {
     ucg_builtin_memcpy(req->step->recv_buffer + offset, data, length);
-    return ucg_builtin_comp_send_check_cb(req);
+    return ucg_builtin_comp_send_check_cb(req,
+            (req->step->phase->ep_cnt - 1) * req->step->fragments);
+}
+
+static int ucg_builtin_comp_recv_many_then_send1_zcopy_cb(ucg_builtin_request_t *req,
+        uint64_t offset, void *data, size_t length)
+{
+    ucg_builtin_memcpy(req->step->recv_buffer + offset, data, length);
+    return ucg_builtin_comp_send_check_cb(req, req->step->fragments);
+}
+
+static int ucg_builtin_comp_recv1_many_then_send_non_zcopy_cb(ucg_builtin_request_t *req,
+        uint64_t offset, void *data, size_t length)
+{
+    ucg_builtin_memcpy(req->step->recv_buffer + offset, data, length);
+    return ucg_builtin_comp_send_check_cb(req, 0);
+}
+
+static int ucg_builtin_comp_recv_many_then_send1_non_zcopy_cb(ucg_builtin_request_t *req,
+        uint64_t offset, void *data, size_t length)
+{
+    ucg_builtin_memcpy(req->step->recv_buffer + offset, data, length);
+    return ucg_builtin_comp_send_check_cb(req, 0);
 }
 
 UCS_PROFILE_FUNC(int, ucg_builtin_comp_reduce_one_cb, (req, offset, data, length),
@@ -228,11 +251,18 @@ static int ucg_builtin_comp_reduce_many_then_send_pipe_cb(ucg_builtin_request_t 
     return ucg_builtin_comp_send_check_frag_cb(req, offset);
 }
 
-static int ucg_builtin_comp_reduce_many_then_send_cb(ucg_builtin_request_t *req,
+static int ucg_builtin_comp_reduce_many_then_send_zcopy_cb(ucg_builtin_request_t *req,
         uint64_t offset, void *data, size_t length)
 {
     ucg_builtin_mpi_reduce_partial(req, offset, data, length, &req->op->super.params);
-    return ucg_builtin_comp_send_check_cb(req);
+    return ucg_builtin_comp_send_check_cb(req, req->step->fragments);
+}
+
+static int ucg_builtin_comp_reduce_many_then_send_non_zcopy_cb(ucg_builtin_request_t *req,
+        uint64_t offset, void *data, size_t length)
+{
+    ucg_builtin_mpi_reduce_partial(req, offset, data, length, &req->op->super.params);
+    return ucg_builtin_comp_send_check_cb(req, 0);
 }
 
 static int ucg_builtin_comp_wait_one_cb(ucg_builtin_request_t *req,
@@ -266,7 +296,7 @@ static int ucg_builtin_comp_wait_many_then_send_cb(ucg_builtin_request_t *req,
 {
     ucs_assert(offset == 0);
     ucs_assert(length == 0);
-    return ucg_builtin_comp_send_check_cb(req);
+    return ucg_builtin_comp_send_check_cb(req, 1);
 }
 
 static int ucg_builtin_comp_last_barrier_step_one_cb(ucg_builtin_request_t *req,
@@ -282,7 +312,7 @@ static int ucg_builtin_comp_last_barrier_step_one_cb(ucg_builtin_request_t *req,
 static int ucg_builtin_comp_last_barrier_step_many_cb(ucg_builtin_request_t *req,
         uint64_t offset, void *data, size_t length)
 {
-    UCG_IF_LAST_MESSAGE(req) {
+    UCG_IF_PENDING_REACHED(req, 0) {
         (void) ucg_builtin_comp_step_cb(req, NULL);
         ucg_collective_release_barrier(req->op->super.plan->group);
         return 1;
@@ -303,10 +333,27 @@ ucs_status_t ucg_builtin_step_select_callbacks(ucg_builtin_plan_phase_t *phase,
     switch (phase->method) {
     case UCG_PLAN_METHOD_BCAST_WAYPOINT:
     case UCG_PLAN_METHOD_SCATTER_WAYPOINT:
+        if (!is_fragmented) {
+            *recv_cb = ucg_builtin_comp_recv_one_then_send_cb;
+        } else if (is_pipelined) {
+            *recv_cb = ucg_builtin_comp_recv_many_then_send_pipe_cb;
+        } else if (is_zcopy) {
+            *recv_cb = ucg_builtin_comp_recv1_many_then_send_zcopy_cb;
+        } else {
+            *recv_cb = ucg_builtin_comp_recv1_many_then_send_non_zcopy_cb;
+        }
+        break;
+
     case UCG_PLAN_METHOD_GATHER_WAYPOINT:
-        *recv_cb = is_fragmented ? (is_pipelined ? ucg_builtin_comp_recv_many_then_send_pipe_cb :
-                                                   ucg_builtin_comp_recv_many_then_send_cb) :
-                                   ucg_builtin_comp_recv_one_then_send_cb;
+        if (!is_fragmented) {
+            *recv_cb = ucg_builtin_comp_recv_one_then_send_cb;
+        } else if (is_pipelined) {
+            *recv_cb = ucg_builtin_comp_recv_many_then_send_pipe_cb;
+        } else if (is_zcopy) {
+            *recv_cb = ucg_builtin_comp_recv_many_then_send1_zcopy_cb;
+        } else {
+            *recv_cb = ucg_builtin_comp_recv_many_then_send1_non_zcopy_cb;
+        }
         break;
 
     case UCG_PLAN_METHOD_RECV_TERMINAL:
@@ -328,10 +375,14 @@ ucs_status_t ucg_builtin_step_select_callbacks(ucg_builtin_plan_phase_t *phase,
         if (is_single_msg) {
             *recv_cb = nonzero_length ? ucg_builtin_comp_reduce_one_then_send_cb :
                                         ucg_builtin_comp_wait_one_then_send_cb;
+        } else if (!nonzero_length) {
+            *recv_cb = ucg_builtin_comp_wait_many_then_send_cb;
+        } else if (is_pipelined) {
+            *recv_cb = ucg_builtin_comp_reduce_many_then_send_pipe_cb;
+        } else if (is_zcopy) {
+            *recv_cb = ucg_builtin_comp_reduce_many_then_send_zcopy_cb;
         } else {
-            *recv_cb = nonzero_length ? (is_pipelined ? ucg_builtin_comp_reduce_many_then_send_pipe_cb :
-                                                        ucg_builtin_comp_reduce_many_then_send_cb) :
-                                        ucg_builtin_comp_wait_many_then_send_cb;
+            *recv_cb = ucg_builtin_comp_reduce_many_then_send_non_zcopy_cb;
         }
         break;
 
@@ -355,7 +406,7 @@ ucs_status_t ucg_builtin_step_select_callbacks(ucg_builtin_plan_phase_t *phase,
             break;
         }
 
-        if (is_single_msg && !is_zcopy) {
+        if (is_single_msg && !is_zcopy) { /* zcopy also needs pending == 0... */
             *recv_cb = nonzero_length ? ucg_builtin_comp_reduce_one_cb :
                                         ucg_builtin_comp_wait_one_cb;
         } else {
@@ -475,8 +526,17 @@ static ucs_status_t ucg_builtin_optimize_bcopy_to_zcopy(ucg_builtin_op_t *op)
 
             step->flags &= ~UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BCOPY;
             step->flags |=  UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_ZCOPY;
+
+
             if (step->recv_cb == ucg_builtin_comp_reduce_one_cb) {
                 step->recv_cb = ucg_builtin_comp_reduce_many_cb;
+                /* So that recursive doubling doesn't return right after sending */
+            } else if (step->recv_cb == ucg_builtin_comp_recv1_many_then_send_non_zcopy_cb) {
+                step->recv_cb = ucg_builtin_comp_recv1_many_then_send_zcopy_cb;
+            } else if (step->recv_cb == ucg_builtin_comp_recv_many_then_send1_non_zcopy_cb) {
+                step->recv_cb = ucg_builtin_comp_recv_many_then_send1_zcopy_cb;
+            } else if (step->recv_cb == ucg_builtin_comp_reduce_many_then_send_non_zcopy_cb) {
+                step->recv_cb = ucg_builtin_comp_reduce_many_then_send_zcopy_cb;
             }
         }
     } while (!(step->flags & UCG_BUILTIN_OP_STEP_FLAG_LAST_STEP));
