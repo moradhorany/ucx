@@ -6,7 +6,9 @@
 #include "builtin_ops.h"
 
 #include <ucs/debug/log.h>
+#include <ucs/arch/atomic.h>
 #include <ucs/type/status.h>
+#include <ucs/type/spinlock.h>
 #include <ucs/profile/profile.h>
 
 /*
@@ -38,7 +40,7 @@ static void UCS_F_ALWAYS_INLINE ucg_builtin_mpi_reduce(int is_full_fragment,
     ucs_assert(length == (params->recv.count * params->recv.dt_len));          \
     ucg_builtin_mpi_reduce(length == UCG_FRAGMENT_SIZE, params->recv.op_ext,   \
                            _data, (_req)->step->recv_buffer + offset,          \
-                           params->recv.count,  params->recv.dt_ext);          \
+                           params->recv.count, params->recv.dt_ext);           \
 }
 
 #define ucg_builtin_mpi_reduce_partial(_req, _offset, _data, _length, _params) \
@@ -237,8 +239,8 @@ static int ucg_builtin_comp_reduce_one_then_send_cb(ucg_builtin_request_t *req,
     return 1;
 }
 
-UCS_PROFILE_FUNC(int, ucg_builtin_comp_reduce_many_cb, (req, offset, data, length),
-                 ucg_builtin_request_t *req, uint64_t offset, void *data, size_t length)
+static int ucg_builtin_comp_reduce_many_cb(ucg_builtin_request_t *req,
+        uint64_t offset, void *data, size_t length)
 {
     ucg_builtin_mpi_reduce_partial(req, offset, data, length, &req->op->super.params);
     return ucg_builtin_comp_step_check_cb(req);
@@ -582,4 +584,73 @@ ucs_status_t ucg_builtin_op_consider_optimization(ucg_builtin_op_t *op,
     op->optm_cb = ucg_builtin_no_optimization;
     op->opt_cnt = 0;
     return UCS_OK;
+}
+
+#ifdef TODO
+static inline void reduce_atomic_for_packet(void *dst, const void *src, size_t len)
+{
+    size_t length_iter;
+    switch (len) {
+    case sizeof(uint8_t):
+        /* Atomic addition - 8 bits */
+        ucs_atomic_add8(dst, src);
+    break;
+
+    case sizeof(uint16_t):
+        /* Atomic addition - 16 bits */
+        ucs_atomic_add16(dst, src);
+    break;
+
+    case sizeof(uint32_t):
+        /* Atomic addition - 32 bits */
+        ucs_atomic_add32(dst, src);
+    break;
+
+    default:
+        /* Atomic addition - multiples of 64 bits */
+        ucs_assert(len % sizeof(uint64_t) == 0);
+        for (length_iter = len; length_iter > 0; len -= sizeof(uint64_t)) {
+            ucs_atomic_add64(dst, src);
+            dst += sizeof(uint64_t);
+            src += sizeof(uint64_t);
+        }
+    }
+}
+
+int ucg_builtin_atomic_reduce_full(ucg_builtin_request_t *req,
+        uint64_t offset, void *data, size_t length, ucs_spinlock_t *lock)
+{
+
+    if (ucs_unlikely(req->op->super.params->recv.op_ext == MPI_ADD)) {
+        reduce_atomic_for_packet();
+        return;
+    }
+#else
+int ucg_builtin_atomic_reduce_full(ucg_builtin_request_t *req,
+        uint64_t offset, void *src, void *dst, size_t length, ucs_spinlock_t *lock)
+{
+#endif
+    ucg_collective_params_t *params = &req->op->super.params;
+    ucs_assert(lock != NULL);
+
+    ucs_spin_lock(lock);
+    ucg_builtin_mpi_reduce(length == UCG_FRAGMENT_SIZE, params->recv.op_ext,
+                           src, dst, params->send.count, params->send.dt_ext);
+    ucs_spin_unlock(lock);
+
+    return length; // TODO: make ucg_builtin_mpi_reduce return the actual size
+}
+
+int ucg_builtin_atomic_reduce_partial(ucg_builtin_request_t *req,
+        uint64_t offset, void *src, void *dst, size_t length, ucs_spinlock_t *lock)
+{
+    ucg_collective_params_t *params = &req->op->super.params;
+    ucs_assert(lock != NULL);
+
+    ucs_spin_lock(lock);
+    ucg_builtin_mpi_reduce(length == UCG_FRAGMENT_SIZE, params->recv.op_ext, src,
+                           dst, length / params->send.dt_len, params->send.dt_ext);
+    ucs_spin_unlock(lock);
+
+    return length; // TODO: make ucg_builtin_mpi_reduce return the actual size
 }

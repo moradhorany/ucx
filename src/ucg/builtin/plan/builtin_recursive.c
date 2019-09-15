@@ -150,6 +150,7 @@ ucs_status_t ucg_builtin_recursive_create(ucg_builtin_group_ctx_t *ctx,
             phase->method      = UCG_PLAN_METHOD_REDUCE_RECURSIVE;
             phase->ep_cnt      = factor - 1;
             phase->step_index  = step_idx;
+            phase->flags       = 0;
 
 #if ENABLE_DEBUG_DATA || ENABLE_FAULT_TOLERANCE
             phase->indexes     = UCS_ALLOC_CHECK((factor - 1) * sizeof(my_index),
@@ -171,7 +172,7 @@ ucs_status_t ucg_builtin_recursive_create(ucg_builtin_group_ctx_t *ctx,
                     phase->multi_eps = next_ep++;
                 }
                 status = ucg_builtin_connect(ctx, peer_index, phase, (factor != 2) ?
-                        (step_peer_idx - 1) : UCG_BUILTIN_CONNECT_SINGLE_EP);
+                        (step_peer_idx - 1) : UCG_BUILTIN_CONNECT_SINGLE_EP, 0);
             }
         }
         if (status != UCS_OK) {

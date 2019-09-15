@@ -71,8 +71,10 @@ enum ucg_builtin_op_step_flags {
 
     /* Send types */
     UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SHORT      = UCS_BIT(10),
-    UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BCOPY      = UCS_BIT(11),
-    UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_ZCOPY      = UCS_BIT(12),
+    UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SLOCK      = UCS_BIT(11),
+    UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BCOPY      = UCS_BIT(12),
+    UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BLOCK      = UCS_BIT(13),
+    UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_ZCOPY      = UCS_BIT(14),
 };
 
 /* Definitions of several callback functions, used during an operation */

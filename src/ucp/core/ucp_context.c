@@ -1060,6 +1060,11 @@ static void ucp_apply_params(ucp_context_h context, const ucp_params_t *params,
     } else {
         context->mt_lock.mt_type = UCP_MT_TYPE_NONE;
     }
+
+    if (params->field_mask & UCP_PARAM_FIELD_GROUP_INFO) {
+        context->config.num_local_peers = params->num_local_peers;
+        context->config.my_local_peer_idx  = params->my_local_peer_idx;
+    }
 }
 
 static ucs_status_t ucp_fill_config(ucp_context_h context,
@@ -1264,8 +1269,8 @@ err:
 }
 
 ucs_status_t ucp_extend(ucp_context_h context, size_t extension_ctx_length,
-                        ucp_extension_init_f init, ucp_extension_cleanup_f cleanup,
-                        size_t *extension_ctx_offset_in_worker, unsigned *am_id)
+                        ucp_ext_init_f init, ucp_ext_cleanup_f cleanup,
+                        size_t *extension_ctx_offset_in_worker)
 {
     if (context->last_am_id == UCP_AM_ID_MAX) {
         return UCS_ERR_NO_RESOURCE;
@@ -1279,7 +1284,6 @@ ucs_status_t ucp_extend(ucp_context_h context, size_t extension_ctx_length,
     ext->worker_offset              = base_worker_size + context->extension_size;
     context->extension_size        += extension_ctx_length;
     *extension_ctx_offset_in_worker = ext->worker_offset;
-    *am_id                          = context->last_am_id++;
 
     ucs_list_add_tail(&context->extensions, &ext->list);
     return UCS_OK;

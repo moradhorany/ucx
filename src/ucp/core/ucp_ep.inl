@@ -33,6 +33,12 @@ static inline ucp_lane_index_t ucp_ep_get_wireup_msg_lane(ucp_ep_h ep)
     return (lane == UCP_NULL_LANE) ? ucp_ep_get_am_lane(ep) : lane;
 }
 
+static inline ucp_lane_index_t ucp_ep_get_smcoll_lane(ucp_ep_h ep)
+{
+    ucs_assert(ucp_ep_config(ep)->key.smcoll_lane != UCP_NULL_LANE);
+    return ucp_ep_config(ep)->key.smcoll_lane;
+}
+
 static inline ucp_lane_index_t ucp_ep_get_tag_lane(ucp_ep_h ep)
 {
     ucs_assert(ucp_ep_config(ep)->key.tag_lane != UCP_NULL_LANE);

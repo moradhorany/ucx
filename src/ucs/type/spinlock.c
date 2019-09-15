@@ -10,11 +10,11 @@
 #include <string.h>
 
 
-ucs_status_t ucs_spinlock_init(ucs_spinlock_t *lock)
+static ucs_status_t ucs_spinlock_init_internal(ucs_spinlock_t *lock, int flags)
 {
     int ret;
 
-    ret = pthread_spin_init(&lock->lock, 0);
+    ret = pthread_spin_init(&lock->lock, flags);
     if (ret != 0) {
         return UCS_ERR_IO_ERROR;
     }
@@ -22,6 +22,14 @@ ucs_status_t ucs_spinlock_init(ucs_spinlock_t *lock)
     lock->count = 0;
     lock->owner = 0xfffffffful;
     return UCS_OK;
+}
+
+ucs_status_t ucs_spinlock_init(ucs_spinlock_t *lock) {
+    return ucs_spinlock_init_internal(lock, PTHREAD_PROCESS_PRIVATE);
+}
+
+ucs_status_t ucs_spinlock_init_sm(ucs_spinlock_t *lock) {
+    return ucs_spinlock_init_internal(lock, PTHREAD_PROCESS_SHARED);
 }
 
 void ucs_spinlock_destroy(ucs_spinlock_t *lock)

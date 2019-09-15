@@ -166,8 +166,9 @@ enum ucp_worker_params_field {
     UCP_WORKER_PARAM_FIELD_CPU_MASK     = UCS_BIT(1), /**< Worker's CPU bitmap */
     UCP_WORKER_PARAM_FIELD_EVENTS       = UCS_BIT(2), /**< Worker's events bitmap */
     UCP_WORKER_PARAM_FIELD_USER_DATA    = UCS_BIT(3), /**< User data */
-    UCP_WORKER_PARAM_FIELD_EVENT_FD     = UCS_BIT(4)  /**< External event file
+    UCP_WORKER_PARAM_FIELD_EVENT_FD     = UCS_BIT(4), /**< External event file
                                                            descriptor */
+    UCP_PARAM_FIELD_GROUP_INFO          = UCS_BIT(5)  /**< Info for collectives */
 };
 
 
@@ -699,6 +700,10 @@ typedef struct ucp_params {
      */
     size_t                             estimated_num_eps;
 
+
+    // TODO: document...
+    uint32_t num_local_peers;
+    uint32_t my_local_peer_idx;
 } ucp_params_t;
 
 
@@ -1149,11 +1154,13 @@ static inline ucs_status_t ucp_init(const ucp_params_t *params,
                             context_p);
 }
 
-typedef ucs_status_t (*ucp_extension_init_f)   (void *ctx);
-typedef void         (*ucp_extension_cleanup_f)(void *ctx);
+typedef ucs_status_t (*ucp_ext_init_f)      (ucp_worker_h worker,
+                                             unsigned *next_am_id,
+                                             void *ctx);
+typedef void         (*ucp_ext_cleanup_f)   (void *ctx);
 ucs_status_t ucp_extend(ucp_context_h context, size_t extension_ctx_length,
-        ucp_extension_init_f init, ucp_extension_cleanup_f cleanup,
-        size_t *extension_ctx_offset_in_worker, unsigned *am_id);
+        ucp_ext_init_f init, ucp_ext_cleanup_f cleanup,
+        size_t *extension_ctx_offset_in_worker);
 
 
 /**

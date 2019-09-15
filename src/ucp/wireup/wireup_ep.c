@@ -281,6 +281,7 @@ ucp_wireup_ep_connect_aux(ucp_wireup_ep_t *wireup_ep,
     uct_ep_params.iface      = wiface->iface;
     uct_ep_params.dev_addr   = aux_addr->dev_addr;
     uct_ep_params.iface_addr = aux_addr->iface_addr;
+
     status = uct_ep_create(&uct_ep_params, &wireup_ep->aux_ep);
     if (status != UCS_OK) {
         return status;

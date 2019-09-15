@@ -52,6 +52,7 @@ void ucp_ep_config_key_reset(ucp_ep_config_key_t *key)
     key->num_lanes        = 0;
     key->am_lane          = UCP_NULL_LANE;
     key->wireup_lane      = UCP_NULL_LANE;
+    key->smcoll_lane      = UCP_NULL_LANE;
     key->tag_lane         = UCP_NULL_LANE;
     key->rma_bw_md_map    = 0;
     key->reachable_md_map = 0;
@@ -285,6 +286,7 @@ ucs_status_t ucp_ep_init_create_wireup(ucp_ep_h ep,
     key.lanes[0].dst_md_index = UCP_NULL_RESOURCE;
     key.am_lane               = 0;
     key.wireup_lane           = 0;
+    key.smcoll_lane           = 0;
     key.tag_lane              = 0;
     key.am_bw_lanes[0]        = 0;
     key.rma_lanes[0]          = 0;
@@ -827,6 +829,7 @@ int ucp_ep_config_is_equal(const ucp_ep_config_key_t *key1,
         (key1->am_lane          != key2->am_lane)                                  ||
         (key1->tag_lane         != key2->tag_lane)                                 ||
         (key1->wireup_lane      != key2->wireup_lane)                              ||
+        (key1->smcoll_lane      != key2->smcoll_lane)                              ||
         (key1->err_mode         != key2->err_mode)                                 ||
         (key1->status           != key2->status))
     {
@@ -1499,6 +1502,11 @@ void ucp_ep_config_lane_info_str(ucp_context_h context,
                      UCT_TL_RESOURCE_DESC_ARG(&context->tl_rscs[aux_rsc_index].tl_rsc));
             p += strlen(p);
         }
+    }
+
+    if (lane == key->smcoll_lane) {
+        snprintf(p, endp - p, " smcoll");
+        p += strlen(p);
     }
 }
 

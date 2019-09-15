@@ -140,13 +140,13 @@ typedef struct ucg_op {
 struct ucg_plan_component {
     /* test for support and other attribures of this component */
     ucs_status_t           (*query)   (unsigned ucg_api_version,
+                                       unsigned available_am_id,
                                        ucg_plan_desc_t **resources_p,
                                        unsigned *nums_p);
     /* create a new planner context for a group */
     ucs_status_t           (*create)  (ucg_plan_component_t *plan_component,
                                        ucg_worker_h worker,
                                        ucg_group_h group,
-                                       unsigned base_am_id,
                                        ucg_group_id_t group_id,
                                        ucs_mpool_t *group_am_mp,
                                        const ucg_group_params_t *group_params);
@@ -186,6 +186,7 @@ struct ucg_plan_component {
     /* Filled By UCG core, not by the component itself */
     size_t                   worker_ctx_offset; /**< offset between ucg_worker_h and my context */
     size_t                   group_ctx_offset;  /**< offset between ucg_group_h and my context */
+    size_t                   allocated_am_id;   /**< Active Message ID allocated for this component */
 };
 
 /**
@@ -243,11 +244,18 @@ ucs_status_t ucg_plan_single(ucg_plan_component_t *planc,
                              ucg_plan_desc_t **resources_p,
                              unsigned *nums_p);
 
+enum ucg_plan_connect_flags {
+    UCG_PLAN_CONNECT_FLAG_ASK_LOOPBACK = UCS_BIT(0), /* want to connect to myself */
+    UCG_PLAN_CONNECT_FLAG_ASK_INCAST   = UCS_BIT(1), /* want transport with incast */
+    UCG_PLAN_CONNECT_FLAG_ASK_BCAST    = UCS_BIT(2), /* want transport with bcast */
+};
+
 /* Helper function for connecting to other group members - by their index */
 typedef ucs_status_t (*ucg_plan_reg_handler_cb)(uct_iface_h iface, void *arg);
 ucs_status_t ucg_plan_connect(ucg_group_h group, ucg_group_member_index_t idx,
+                              enum ucg_plan_connect_flags flags,
                               uct_ep_h *ep_p, const uct_iface_attr_t **ep_attr_p,
-                              uct_md_h* md_p, const uct_md_attr_t** md_attr_p);
+                              uct_md_h *md_p, const uct_md_attr_t **md_attr_p);
 
 /* Helper function for selecting other planners - to be used as fall-back */
 ucs_status_t ucg_plan_select(ucg_group_h group, const char* planner_name,

@@ -50,7 +50,7 @@ static void uct_mm_ep_signal_remote(uct_mm_ep_t *ep)
     }
 }
 
-static UCS_CLASS_INIT_FUNC(uct_mm_ep_t, const uct_ep_params_t *params)
+UCS_CLASS_INIT_FUNC(uct_mm_ep_t, const uct_ep_params_t *params)
 {
     uct_mm_iface_t *iface = ucs_derived_of(params->iface, uct_mm_iface_t);
     const uct_mm_iface_addr_t *addr = (const void *)params->iface_addr;
@@ -105,7 +105,7 @@ static UCS_CLASS_INIT_FUNC(uct_mm_ep_t, const uct_ep_params_t *params)
     return UCS_OK;
 }
 
-static UCS_CLASS_CLEANUP_FUNC(uct_mm_ep_t)
+UCS_CLASS_CLEANUP_FUNC(uct_mm_ep_t)
 {
     uct_mm_iface_t *iface = ucs_derived_of(self->super.super.iface, uct_mm_iface_t);
     ucs_status_t status;
@@ -198,6 +198,11 @@ static inline ucs_status_t uct_mm_ep_get_remote_elem(uct_mm_ep_t *ep, uint64_t h
     ucs_writeback_cache(ucs_unaligned_ptr(&ep->fifo_ctl->head),
                         ucs_unaligned_ptr(&ep->fifo_ctl->head + 1));
     return UCS_OK;
+}
+ucs_status_t uct_mm_ep_get_remote_elem_ext(uct_mm_ep_t *ep, uint64_t head,
+                                           uct_mm_fifo_element_t **elem)
+{
+    return uct_mm_ep_get_remote_elem(ep, head, elem);
 }
 
 static inline void uct_mm_ep_update_cached_tail(uct_mm_ep_t *ep)

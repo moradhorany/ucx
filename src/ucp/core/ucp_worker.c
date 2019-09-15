@@ -423,6 +423,7 @@ static unsigned ucp_worker_iface_err_handle_progress(void *arg)
     key                    = ucp_ep_config(ucp_ep)->key;
     key.am_lane            = 0;
     key.wireup_lane        = 0;
+    key.smcoll_lane        = 0;
     key.tag_lane           = 0;
     key.rma_lanes[0]       = 0;
     key.rma_bw_lanes[0]    = 0;
@@ -924,6 +925,12 @@ static ucs_status_t ucp_worker_add_resource_ifaces(ucp_worker_h worker)
         iface_params.field_mask = UCT_IFACE_PARAM_FIELD_OPEN_MODE;
         resource = &context->tl_rscs[tl_id];
 
+        if (context->config.features & UCP_FEATURE_GROUPS) {
+            iface_params.field_mask        |= UCT_IFACE_PARAM_FIELD_COLL_INFO;
+            iface_params.node_info.proc_cnt = context->config.num_local_peers;
+            iface_params.node_info.proc_idx = context->config.my_local_peer_idx;
+        }
+
         if (resource->flags & UCP_TL_RSC_FLAG_SOCKADDR) {
             iface_params.open_mode            = UCT_IFACE_OPEN_MODE_SOCKADDR_CLIENT;
         } else {
@@ -1338,7 +1345,8 @@ static ucs_status_t ucp_worker_init_extensions(ucp_worker_h worker)
     ucs_status_t status;
     ucp_context_extension_t *ext, *del_ext;
     ucs_list_for_each(ext, &worker->context->extensions, list) {
-        status = ext->init((char*)worker + ext->worker_offset);
+        status = ext->init(worker, &worker->context->last_am_id,
+                (char*)worker + ext->worker_offset);
         if (status != UCS_OK) {
             goto err_extensions;
         }
@@ -1352,7 +1360,7 @@ err_extensions:
         }
         ext->cleanup((char*)worker + ext->worker_offset);
     }
-    return UCS_ERR_IO_ERROR;
+    return status;
 }
 
 static void ucp_worker_clean_extensions(ucp_worker_h worker)
@@ -1476,6 +1484,11 @@ ucs_status_t ucp_worker_create(ucp_context_h context,
         worker->user_data = NULL;
     }
 
+    /* COLL_TODO
+    if (params->field_mask & UCP_PARAM_FIELD_GROUP_INFO) {
+        worker->coll_info = params->co
+    }*/
+
     name_length = ucs_min(UCP_WORKER_NAME_MAX,
                           context->config.ext.max_worker_name + 1);
     ucs_snprintf_zero(worker->name, name_length, "%s:%d", ucs_get_host_name(),
@@ -1536,6 +1549,12 @@ ucs_status_t ucp_worker_create(ucp_context_h context,
         goto err_wakeup_cleanup;
     }
 
+    /* Init extensions registered for this context */
+    status = ucp_worker_init_extensions(worker);
+    if (status != UCS_OK) {
+        goto err_close_mpools;
+    }
+
     /* Open all resources as interfaces on this worker */
     status = ucp_worker_add_resource_ifaces(worker);
     if (status != UCS_OK) {
@@ -1556,12 +1575,6 @@ ucs_status_t ucp_worker_create(ucp_context_h context,
 
     /* Select atomic resources */
     ucp_worker_init_atomic_tls(worker);
-
-    /* Init extensions registered for this context */
-    status = ucp_worker_init_extensions(worker);
-    if (status != UCS_OK) {
-        goto err_close_mpools;
-    }
 
     /* At this point all UCT memory domains and interfaces are already created
      * so warn about unused environment variables.

@@ -30,7 +30,11 @@ enum UCS_S_PACKED ucg_builtin_plan_method_type {
     UCG_PLAN_METHOD_REDUCE_TERMINAL,   /* receive and reduce from each peer */
     UCG_PLAN_METHOD_REDUCE_WAYPOINT,   /* receive, reduce, and pass onwards */
     UCG_PLAN_METHOD_REDUCE_RECURSIVE,  /* send+receive and reduce (RD) */
-    UCG_PLAN_METHOD_NEIGHBOR,          /* "halo exchange", for neighborhood ops */
+    UCG_PLAN_METHOD_NEIGHBOR           /* "halo exchange", for neighborhood ops */
+};
+
+enum ucg_builtin_plan_flags {
+    UCG_PLAN_FLAG_NEEDS_LOCKING = UCS_BIT(0)  /* e.g. for shared-memory sends */
 };
 
 typedef struct ucg_builtin_plan_phase {
@@ -40,8 +44,9 @@ typedef struct ucg_builtin_plan_phase {
         uct_ep_h                      single_ep;     /* single endpoint handle */
     };
     uint32_t                          ep_cnt;        /* Number of endpoints (below) */
-    enum ucg_builtin_plan_method_type method;        /* how to apply this map */
     ucg_step_idx_t                    step_index;    /* determines step index */
+    enum ucg_builtin_plan_method_type method;        /* how to apply this map */
+    uint16_t                          flags;         /* @ref enum ucg_builtin_plan_flags */
 
     size_t                            max_short_one; /* max single short message */
     size_t                            max_short_max; /* max length to use short */
@@ -55,6 +60,7 @@ typedef struct ucg_builtin_plan_phase {
 
 #if ENABLE_DEBUG_DATA || ENABLE_FAULT_TOLERANCE
     ucg_group_member_index_t         *indexes;       /* array corresponding to EPs */
+#define UCG_GROUP_MEMBER_INDEX_UNSPECIFIED ((ucg_group_member_index_t)-1)
 #endif
 } ucg_builtin_plan_phase_t;
 
@@ -76,7 +82,7 @@ typedef struct ucg_builtin_plan {
 #define UCG_BUILTIN_CONNECT_SINGLE_EP ((unsigned)-1)
 ucs_status_t ucg_builtin_connect(ucg_builtin_group_ctx_t *ctx,
         ucg_group_member_index_t idx, ucg_builtin_plan_phase_t *phase,
-        unsigned phase_ep_index);
+        unsigned phase_ep_index, unsigned sm_coll_flags);
 
 typedef struct ucg_builtin_config ucg_builtin_config_t;
 

@@ -214,7 +214,6 @@ typedef struct ucp_worker {
     ucs_mpool_t                   reg_mp;        /* Registered memory pool */
     ucs_mpool_t                   rndv_frag_mp;  /* Memory pool for RNDV fragments */
     ucp_tag_match_t               tm;            /* Tag-matching queues and offload info */
-    void                         *groups;        /* Groups and collectives context */
     ucp_ep_h                      mem_type_ep[UCT_MD_MEM_TYPE_LAST];/* memory type eps */
 
     UCS_STATS_NODE_DECLARE(stats);

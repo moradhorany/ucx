@@ -41,7 +41,8 @@ enum {
     UCP_WIREUP_LANE_USAGE_RMA    = UCS_BIT(2), /* Remote memory access */
     UCP_WIREUP_LANE_USAGE_RMA_BW = UCS_BIT(3), /* High-BW remote memory access */
     UCP_WIREUP_LANE_USAGE_AMO    = UCS_BIT(4), /* Atomic memory access */
-    UCP_WIREUP_LANE_USAGE_TAG    = UCS_BIT(5)  /* Tag matching offload */
+    UCP_WIREUP_LANE_USAGE_TAG    = UCS_BIT(5), /* Tag matching offload */
+    UCP_WIREUP_LANE_USAGE_SMCOLL = UCS_BIT(6)  /* Shared-memory Collectives */
 };
 
 
@@ -1257,6 +1258,46 @@ ucp_wireup_select_wireup_msg_lane(ucp_worker_h worker,
     return p2p_lane;
 }
 
+
+/* Lane for shared memory collectives interface */
+static ucs_status_t ucp_wireup_add_smcoll_lane(ucp_ep_h ep, unsigned address_count,
+                                               const ucp_address_entry_t *address_list,
+                                               ucp_wireup_lane_desc_t *lane_descs,
+                                               ucp_lane_index_t *num_lanes_p,
+                                               double am_score,
+                                               ucp_err_handling_mode_t err_mode)
+{
+    ucp_wireup_criteria_t criteria = {0};
+    ucp_rsc_index_t rsc_index;
+    ucs_status_t status;
+    unsigned addr_index;
+    double score;
+
+    /* Check if we need smcoll, for wireup */
+    if (!(ucp_ep_get_context_features(ep) & UCP_FEATURE_GROUPS)) {
+        return UCS_OK;
+    }
+
+    criteria.title              = "smcoll";
+    criteria.local_md_flags     = 0;
+    criteria.remote_md_flags    = 0;
+    criteria.remote_iface_flags = /* the same as local_iface_flags */
+    criteria.local_iface_flags  = UCT_IFACE_FLAG_AM_BCOPY | UCT_IFACE_FLAG_BCAST;
+    criteria.calc_score         = ucp_wireup_am_score_func;
+
+    status = ucp_wireup_select_transport(ep, address_list, address_count, &criteria,
+                                         -1, -1, -1, -1, 0, &rsc_index, &addr_index,
+                                         &score);
+    if (status != UCS_OK) {
+        return status;
+    }
+
+    ucp_wireup_add_lane_desc(lane_descs, num_lanes_p, rsc_index, addr_index,
+                             address_list[addr_index].md_index, score,
+                             UCP_WIREUP_LANE_USAGE_SMCOLL, 0);
+    return UCS_OK;
+}
+
 static uint64_t
 ucp_wireup_get_reachable_mds(ucp_worker_h worker, unsigned address_count,
                              const ucp_address_entry_t *address_list)
@@ -1336,6 +1377,13 @@ ucs_status_t ucp_wireup_select_lanes(ucp_ep_h ep, const ucp_ep_params_t *params,
         return status;
     }
 
+    status = ucp_wireup_add_smcoll_lane(ep, address_count, address_list,
+                                        lane_descs, &key->num_lanes, am_score,
+                                        key->err_mode);
+    if ((status != UCS_OK) && (status != UCS_ERR_UNREACHABLE)) {
+        return status;
+    }
+
     /* call ucp_wireup_add_am_bw_lanes after ucp_wireup_add_am_lane to
      * allow exclude AM lane from AM_BW list */
     status = ucp_wireup_add_am_bw_lanes(ep, params, ep_init_flags, address_count,
@@ -1383,6 +1431,10 @@ ucs_status_t ucp_wireup_select_lanes(ucp_ep_h ep, const ucp_ep_params_t *params,
         if (lane_descs[lane].usage & UCP_WIREUP_LANE_USAGE_TAG) {
             ucs_assert(key->tag_lane == UCP_NULL_LANE);
             key->tag_lane = lane;
+        }
+        if (lane_descs[lane].usage & UCP_WIREUP_LANE_USAGE_SMCOLL) {
+            ucs_assert(key->smcoll_lane == UCP_NULL_LANE);
+            key->smcoll_lane = lane;
         }
     }
 

@@ -7,6 +7,7 @@
 
 #include <uct/sm/mm/base/mm_md.h>
 #include <uct/sm/mm/base/mm_iface.h>
+#include <uct/sm/mm/coll/mm_coll_iface.h>
 #include <ucs/debug/memtrack.h>
 #include <ucs/debug/log.h>
 #include <sys/mman.h>
@@ -559,3 +560,4 @@ static uct_mm_mapper_ops_t uct_posix_mapper_ops = {
 
 UCT_MM_COMPONENT_DEFINE(uct_posix_md, "posix", &uct_posix_mapper_ops, uct_posix, "POSIX_")
 UCT_MD_REGISTER_TL(&uct_posix_md, &uct_mm_tl);
+UCT_MD_REGISTER_TL(&uct_posix_md, &uct_mm_coll_tl);

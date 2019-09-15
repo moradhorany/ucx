@@ -139,8 +139,8 @@ typedef struct ucp_tl_md {
 typedef struct ucp_context_extenstion {
     ucs_list_link_t list;
     size_t worker_offset;
-    ucp_extension_init_f init;
-    ucp_extension_cleanup_f cleanup;
+    ucp_ext_init_f init;
+    ucp_ext_cleanup_f cleanup;
 } ucp_context_extension_t;
 
 
@@ -198,6 +198,10 @@ typedef struct ucp_context {
 
         /* Bitmap of sockaddr auxiliary transports to pack for client/server flow */
         uint64_t                  sockaddr_aux_rscs_bitmap;
+
+        /* Number of local (same-node) peers and my unique index among them */
+        uint32_t                  num_local_peers;
+        uint32_t                  my_local_peer_idx;
 
         /* Configuration supplied by the user */
         ucp_context_config_t      ext;

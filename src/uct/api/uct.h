@@ -248,6 +248,10 @@ typedef enum uct_atomic_op {
 #define UCT_IFACE_FLAG_TAG_EAGER_BCOPY UCS_BIT(51) /**< Hardware tag matching bcopy eager support */
 #define UCT_IFACE_FLAG_TAG_EAGER_ZCOPY UCS_BIT(52) /**< Hardware tag matching zcopy eager support */
 #define UCT_IFACE_FLAG_TAG_RNDV_ZCOPY  UCS_BIT(53) /**< Hardware tag matching rendezvous zcopy support */
+
+        /* Multi-peer operations */
+#define UCT_IFACE_FLAG_BCAST  UCS_BIT(55) /**< one-to-many send operations */
+#define UCT_IFACE_FLAG_INCAST UCS_BIT(56) /**< many-to-one receive operations */
 /**
  * @}
  */
@@ -426,7 +430,11 @@ enum uct_iface_params_field {
     UCT_IFACE_PARAM_FIELD_HW_TM_RNDV_ARG    = UCS_BIT(11),
 
     /** Enables @ref uct_iface_params_t::rndv_cb */
-    UCT_IFACE_PARAM_FIELD_HW_TM_RNDV_CB     = UCS_BIT(12)
+    UCT_IFACE_PARAM_FIELD_HW_TM_RNDV_CB     = UCS_BIT(12),
+
+    /** Enables @ref uct_iface_params_t::coll_np and
+     *  @ref uct_iface_params_t::coll_id */
+    UCT_IFACE_PARAM_FIELD_COLL_INFO         = UCS_BIT(13)
 };
 
 /**
@@ -761,6 +769,12 @@ struct uct_iface_params {
     void                                         *rndv_arg;
     /** Callback for tag matching unexpected rndv messages */
     uct_tag_unexp_rndv_cb_t                      rndv_cb;
+
+    /* Collective group member information */
+    struct {
+        uint32_t                                 proc_cnt;
+        uint32_t                                 proc_idx;
+    } node_info;
 };
 
 
