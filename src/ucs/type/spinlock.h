@@ -26,6 +26,8 @@ typedef struct ucs_spinlock {
 
 ucs_status_t ucs_spinlock_init(ucs_spinlock_t *lock);
 
+ucs_status_t ucs_spinlock_init_sm(ucs_spinlock_t *lock);
+
 void ucs_spinlock_destroy(ucs_spinlock_t *lock);
 
 static inline int ucs_spin_is_owner(ucs_spinlock_t *lock, pthread_t self)

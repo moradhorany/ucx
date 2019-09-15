@@ -21,7 +21,7 @@
 #define UCT_MM_IFACE_MAX_SIG_EVENTS  32
 
 
-static ucs_config_field_t uct_mm_iface_config_table[] = {
+ucs_config_field_t uct_mm_iface_config_table[] = {
     {"", "ALLOC=md", NULL,
      ucs_offsetof(uct_mm_iface_config_t, super),
      UCS_CONFIG_TYPE_TABLE(uct_iface_config_table)},
@@ -80,8 +80,8 @@ ucs_status_t uct_mm_iface_flush(uct_iface_h tl_iface, unsigned flags,
     return UCS_OK;
 }
 
-static ucs_status_t uct_mm_iface_query(uct_iface_h tl_iface,
-                                       uct_iface_attr_t *iface_attr)
+ucs_status_t uct_mm_iface_query(uct_iface_h tl_iface,
+                                uct_iface_attr_t *iface_attr)
 {
     uct_mm_iface_t *iface = ucs_derived_of(tl_iface, uct_mm_iface_t);
     memset(iface_attr, 0, sizeof(uct_iface_attr_t));
@@ -181,17 +181,16 @@ ucs_status_t uct_mm_assign_desc_to_fifo_elem(uct_mm_iface_t *iface,
 }
 
 static inline ucs_status_t uct_mm_iface_process_recv(uct_mm_iface_t *iface,
-                                                     uct_mm_fifo_element_t* elem)
+                                                     uct_mm_fifo_element_t* elem,
+                                                     void *data)
 {
     ucs_status_t status;
-    void         *data;
 
     if (ucs_likely(elem->flags & UCT_MM_FIFO_ELEM_FLAG_INLINE)) {
         /* read short (inline) messages from the FIFO elements */
         uct_iface_trace_am(&iface->super, UCT_AM_TRACE_TYPE_RECV, elem->am_id,
-                           elem + 1, elem->length, "RX: AM_SHORT");
-        status = uct_mm_iface_invoke_am(iface, elem->am_id, elem + 1,
-                                        elem->length, 0);
+                           data, elem->length, "RX: AM_SHORT");
+        status = uct_mm_iface_invoke_am(iface, elem->am_id, data, elem->length, 0);
     } else {
         /* read bcopy messages from the receive descriptors */
         VALGRIND_MAKE_MEM_DEFINED(elem->desc_chunk_base_addr + elem->desc_offset,
@@ -212,6 +211,12 @@ static inline ucs_status_t uct_mm_iface_process_recv(uct_mm_iface_t *iface,
     return status;
 }
 
+ucs_status_t uct_mm_iface_process_recv_ext(uct_mm_iface_t *iface,
+                                           uct_mm_fifo_element_t* elem,
+                                           void *data) {
+    return uct_mm_iface_process_recv(iface, elem, data);
+}
+
 static inline unsigned uct_mm_iface_poll_fifo(uct_mm_iface_t *iface)
 {
     uint64_t read_index_loc, read_index;
@@ -230,13 +235,14 @@ static inline unsigned uct_mm_iface_poll_fifo(uct_mm_iface_t *iface)
     read_index_elem = UCT_MM_IFACE_GET_FIFO_ELEM(iface, iface->recv_fifo_elements ,read_index_loc);
 
     /* check the read_index to see if there is a new item to read (checking the owner bit) */
-    if (((read_index >> iface->fifo_shift) & 1) == ((read_index_elem->flags) & 1)) {
+    if (((read_index >> iface->fifo_shift) & 1) ==
+        ((read_index_elem->flags) & UCT_MM_FIFO_ELEM_FLAG_OWNER)) {
 
         /* read from read_index_elem */
         ucs_memory_cpu_load_fence();
         ucs_assert(iface->read_index <= iface->recv_fifo_ctl->head);
 
-        status = uct_mm_iface_process_recv(iface, read_index_elem);
+        status = uct_mm_iface_process_recv(iface, read_index_elem, read_index_elem + 1);
         if (status != UCS_OK) {
             /* the last_recv_desc is in use. get a new descriptor for it */
             UCT_TL_IFACE_GET_RX_DESC(&iface->super, &iface->recv_desc_mp,
@@ -447,9 +453,9 @@ err:
     return status;
 }
 
-static UCS_CLASS_INIT_FUNC(uct_mm_iface_t, uct_md_h md, uct_worker_h worker,
-                           const uct_iface_params_t *params,
-                           const uct_iface_config_t *tl_config)
+UCS_CLASS_INIT_FUNC(uct_mm_iface_t, uct_md_h md, uct_worker_h worker,
+                    const uct_iface_params_t *params,
+                    const uct_iface_config_t *tl_config)
 {
     uct_mm_iface_config_t *mm_config = ucs_derived_of(tl_config, uct_mm_iface_config_t);
     uct_mm_fifo_element_t* fifo_elem_p;

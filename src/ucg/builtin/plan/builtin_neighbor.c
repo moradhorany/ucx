@@ -21,7 +21,7 @@
 
 #define UCG_BUILTIN_NEIGHBOR_CONNECT_CELL(dir, ctx, me, dim_size, total, phs, ep_slot)\
        ucg_builtin_connect(ctx, UCG_PLAN_CALC_CELL##dir                      \
-               ((me), (dim_size), (total)), (phs), (ep_slot))
+               ((me), (dim_size), (total)), (phs), (ep_slot), 0)
 
 ucs_config_field_t ucg_builtin_neighbor_config_table[] = {
     {"DIMENTION", "2", "Neighborhood dimention (e.g. 2, for a 2-D grid)",
@@ -69,6 +69,7 @@ ucs_status_t ucg_topo_neighbor_create(ucg_builtin_group_ctx_t *ctx,
     nbr_phs->multi_eps             = (uct_ep_h*)(nbr_phs + 1);
     nbr_phs->method                = UCG_PLAN_METHOD_NEIGHBOR;
     nbr_phs->ep_cnt                = 4;
+    nbr_phs->flags                 = 0;
     neighbor->phs_cnt              = 1;
 
     /* Find my own index */

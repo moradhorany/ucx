@@ -5,12 +5,13 @@
 
 #include "ucg_group.h"
 
-#include <ucp/core/ucp_ep.inl>
-#include <ucp/core/ucp_worker.h>
 #include <ucs/datastruct/queue.h>
 #include <ucs/datastruct/list.h>
 #include <ucs/profile/profile.h>
 #include <ucs/debug/memtrack.h>
+#include <uct/sm/mm/coll/mm_coll_iface.h>
+#include <ucp/core/ucp_ep.inl>
+#include <ucp/core/ucp_worker.h>
 #include <ucp/core/ucp_ep.inl>
 #include <ucp/core/ucp_proxy_ep.h> /* for @ref ucp_proxy_ep_test */
 
@@ -52,6 +53,7 @@ static ucs_stats_class_t ucg_group_stats_class = {
         if ((ctx)->ifaces[idx] == (iface)) {         \
             break;                                   \
         }                                            \
+        idx++;                                       \
     }                                                \
                                                      \
     if (idx == (ctx)->iface_cnt) {                   \
@@ -63,10 +65,14 @@ unsigned ucg_worker_progress(ucg_worker_h worker)
 {
     unsigned idx, ret = 0;
     ucg_groups_t *gctx = UCG_WORKER_TO_GROUPS_CTX(worker);
+
+    /* First, try the interfaces used for collectives */
     for (idx = 0; idx < gctx->iface_cnt; idx++) {
         ret += uct_iface_progress(gctx->ifaces[idx]);
     }
-    return ret;
+
+    /* As a fallback (and for correctness - try all other transports */
+    return ucp_worker_progress(worker);
 }
 
 unsigned ucg_group_progress(ucg_group_h group)
@@ -74,19 +80,27 @@ unsigned ucg_group_progress(ucg_group_h group)
     unsigned idx, ret = 0;
     ucg_groups_t *gctx = UCG_WORKER_TO_GROUPS_CTX(group->worker);
 
+    /* First, try the per-planner progress functions */
     for (idx = 0; idx < gctx->num_planners; idx++) {
         ucg_plan_component_t *planc = gctx->planners[idx].plan_component;
         ret += planc->progress(group);
     }
+    if (ret) {
+        return ret;
+    }
 
+    /* Next, try the per-group interfaces */
     for (idx = 0; idx < group->iface_cnt; idx++) {
         ret += uct_iface_progress(group->ifaces[idx]);
     }
+    if (ret) {
+        return ret;
+    }
 
-    return ret;
+    /* Lastly, try the "global" progress */
+    return ucg_worker_progress(group->worker);
 }
 
-unsigned ucg_base_am_id;
 size_t ucg_ctx_worker_offset;
 ucs_status_t ucg_group_create(ucg_worker_h worker,
                               const ucg_group_params_t *params,
@@ -127,8 +141,8 @@ ucs_status_t ucg_group_create(ucg_worker_h worker,
     for (idx = 0; idx < ctx->num_planners; idx++) {
         /* Create the per-planner per-group context */
         ucg_plan_component_t *planner = ctx->planners[idx].plan_component;
-        status = planner->create(planner, worker, new_group, ucg_base_am_id + idx,
-                new_group->group_id, &new_group->worker->am_mp, &new_group->params);
+        status = planner->create(planner, worker, new_group, new_group->group_id,
+                &new_group->worker->am_mp, &new_group->params);
         if (status != UCS_OK) {
             goto cleanup_planners;
         }
@@ -383,12 +397,39 @@ void ucg_collective_destroy(ucg_coll_h coll)
     ucg_discard((ucg_op_t*)coll);
 }
 
-ucs_status_t ucg_worker_groups_init(void *groups_ctx)
+static ucs_status_t ucg_worker_groups_find_mm_coll_tl_id(ucp_worker_h worker,
+        ucp_rsc_index_t *mm_coll_tl_id)
 {
+    ucp_context_h context = worker->context;
 
+    ucp_rsc_index_t tl_id;
+    ucs_for_each_bit(tl_id, context->tl_bitmap) {
+        ucp_tl_resource_desc_t *resource = &context->tl_rscs[tl_id];
+        if (!strcmp(resource->tl_rsc.tl_name, UCT_MM_COLL_TL_NAME)) {
+            *mm_coll_tl_id = tl_id;
+            return UCS_OK;
+        }
+    }
+
+    return UCS_ERR_UNSUPPORTED;
+}
+
+__KHASH_IMPL(ucg_group_ep, static UCS_F_MAYBE_UNUSED inline,
+             ucg_group_member_index_t, ucp_ep_h, 1, kh_int64_hash_func,
+             kh_int64_hash_equal);
+
+static ucs_status_t ucg_worker_groups_init(ucp_worker_h worker,
+        unsigned *next_am_id, void *groups_ctx)
+{
     ucg_groups_t *gctx  = (ucg_groups_t*)groups_ctx;
-    ucs_status_t status = ucg_plan_query(&gctx->planners, &gctx->num_planners);
+    ucs_status_t status = ucg_plan_query(next_am_id, &gctx->planners, &gctx->num_planners);
     if (status != UCS_OK) {
+        return status;
+    }
+
+    status = ucg_worker_groups_find_mm_coll_tl_id(worker, &gctx->mm_coll_tl_id);
+    if (status != UCS_OK) {
+        ucg_plan_release_list(gctx->planners, gctx->num_planners);
         return status;
     }
 
@@ -396,22 +437,23 @@ ucs_status_t ucg_worker_groups_init(void *groups_ctx)
     size_t group_ctx_offset  = sizeof(struct ucg_group);
     size_t worker_ctx_offset = ucg_ctx_worker_offset + sizeof(ucg_groups_t);
     for (planner_idx = 0; planner_idx < gctx->num_planners; planner_idx++) {
-        ucg_plan_desc_t* planner            = &gctx->planners[planner_idx];
-        ucg_plan_component_t* planc         = planner->plan_component;
-        planc->worker_ctx_offset            = worker_ctx_offset;
-        worker_ctx_offset                  += sizeof(void*);
-        planc->group_ctx_offset             = group_ctx_offset;
-        group_ctx_offset                   += planc->group_context_size;
+        ucg_plan_desc_t* planner    = &gctx->planners[planner_idx];
+        ucg_plan_component_t* planc = planner->plan_component;
+        planc->worker_ctx_offset    = worker_ctx_offset;
+        worker_ctx_offset          += sizeof(void*);
+        planc->group_ctx_offset     = group_ctx_offset;
+        group_ctx_offset           += planc->group_context_size;
     }
 
     gctx->next_id             = 0;
     gctx->iface_cnt           = 0;
     gctx->total_planner_sizes = group_ctx_offset;
+    kh_init_inplace(ucg_group_ep, &gctx->eps);
     ucs_list_head_init(&gctx->groups_head);
     return UCS_OK;
 }
 
-void ucg_worker_groups_cleanup(void *groups_ctx)
+static void ucg_worker_groups_cleanup(void *groups_ctx)
 {
     ucg_groups_t *gctx = (ucg_groups_t*)groups_ctx;
 
@@ -423,13 +465,14 @@ void ucg_worker_groups_cleanup(void *groups_ctx)
     }
 
     ucg_plan_release_list(gctx->planners, gctx->num_planners);
+    kh_destroy_inplace(ucg_group_ep, &gctx->eps);
 }
 
 ucs_status_t ucg_init_version(unsigned api_major_version,
                               unsigned api_minor_version,
-                              const ucp_params_t *params,
-                              const ucp_config_t *config,
-                              ucp_context_h *context_p)
+                              const ucg_params_t *params,
+                              const ucg_config_t *config,
+                              ucg_context_h *context_p)
 {
     ucs_status_t status = ucp_init_version(api_major_version, api_minor_version,
                                            params, config, context_p);
@@ -437,68 +480,120 @@ ucs_status_t ucg_init_version(unsigned api_major_version,
         size_t ctx_size = sizeof(ucg_groups_t) +
                 ucs_list_length(&ucg_plan_components_list) * sizeof(void*);
         status = ucp_extend(*context_p, ctx_size, ucg_worker_groups_init,
-                ucg_worker_groups_cleanup, &ucg_ctx_worker_offset, &ucg_base_am_id);
+                ucg_worker_groups_cleanup, &ucg_ctx_worker_offset);
     }
     return status;
 }
 
-ucs_status_t ucg_init(const ucp_params_t *params,
-                      const ucp_config_t *config,
-                      ucp_context_h *context_p)
+ucs_status_t ucg_init(const ucg_params_t *params,
+                      const ucg_config_t *config,
+                      ucg_context_h *context_p)
 {
     ucs_status_t status = ucp_init(params, config, context_p);
     if (status == UCS_OK) {
         size_t ctx_size = sizeof(ucg_groups_t) +
                 ucs_list_length(&ucg_plan_components_list) * sizeof(void*);
         status = ucp_extend(*context_p, ctx_size, ucg_worker_groups_init,
-                ucg_worker_groups_cleanup, &ucg_ctx_worker_offset, &ucg_base_am_id);
+                ucg_worker_groups_cleanup, &ucg_ctx_worker_offset);
     }
     return status;
 }
 
-ucs_status_t ucg_plan_connect(ucg_group_h group, ucg_group_member_index_t idx,
-        uct_ep_h *ep_p, const uct_iface_attr_t **ep_attr_p, uct_md_h* md_p,
-        const uct_md_attr_t** md_attr_p)
+ucs_status_t ucg_plan_connect(ucg_group_h group,
+        ucg_group_member_index_t idx, enum ucg_plan_connect_flags flags,
+        uct_ep_h *ep_p, const uct_iface_attr_t **ep_attr_p,
+        uct_md_h *md_p, const uct_md_attr_t    **md_attr_p)
 {
-    /* fill-in UCP connection parameters */
+    int ret;
+    ucs_status_t status;
     size_t remote_addr_len;
-    ucp_address_t *remote_addr;
-    ucs_status_t status = group->params.resolve_address_f(group->params.cb_group_obj,
-            idx, &remote_addr, &remote_addr_len);
-    if (status != UCS_OK) {
-        ucs_error("failed to obtain a UCP endpoint from the external callback");
-        return status;
+    ucp_address_t *remote_addr = NULL;
+    uct_mm_coll_peer_ep_t *iface_ep_slot;
+    ucg_groups_t *gctx = UCG_WORKER_TO_GROUPS_CTX(group->worker);
+
+    if ((flags & UCG_PLAN_CONNECT_FLAG_ASK_INCAST) ||
+        (flags & UCG_PLAN_CONNECT_FLAG_ASK_BCAST)) {
+        /* Connect using the shared-memory collectives interface */
+        uct_iface_h uct_iface      = ucp_worker_iface(group->worker,
+                                                      gctx->mm_coll_tl_id)->iface;
+        uct_mm_coll_iface_t *iface = ucs_derived_of(ucs_derived_of(uct_iface,
+                uct_mm_iface_t), uct_mm_coll_iface_t);
+        UCG_GROUP_PROGRESS_ADD(uct_iface, group);
+        UCG_GROUP_PROGRESS_ADD(uct_iface, gctx);
+
+        *ep_attr_p = ucp_worker_iface_get_attr(group->worker, gctx->mm_coll_tl_id);
+        *md_p      = iface->super.super.md;
+        *md_attr_p = &iface->md_attr;
+
+        /* check for the loopback case (currently only applies to SM collectives) */
+        if (flags & UCG_PLAN_CONNECT_FLAG_ASK_LOOPBACK) {
+            idx = UCT_MM_COLL_MY_PEER_ID;
+        }
+
+        /* Try to find an existing connection to that destination */
+        status = uct_mm_coll_iface_get_ep(iface, idx, &iface_ep_slot);
+        if (status == UCS_OK) {
+            *ep_p = (uct_ep_h)iface_ep_slot->ep;
+            return UCS_OK;
+        }
+        ucs_assert(status == UCS_ERR_NO_ELEM);
     }
 
-    /* special case: connecting to a zero-length address means it's "debugging" */
-    if (ucs_unlikely(remote_addr_len == 0)) {
-        *ep_p = NULL;
-        return UCS_OK;
-    }
-
-    /* create an endpoint for communication with the remote member */
+    /* Look-up the UCP endpoint based on the index */
     ucp_ep_h ucp_ep;
-    ucp_ep_params_t ep_params = {
-            .field_mask = UCP_EP_PARAM_FIELD_REMOTE_ADDRESS,
-            .address = remote_addr
-    };
+    khiter_t iter = kh_get(ucg_group_ep, &gctx->eps, idx);
+    if (iter != kh_end(&gctx->eps)) {
+        /* Use the cached connection */
+        ucp_ep = kh_value(&gctx->eps, iter);
+    } else {
+        /* fill-in UCP connection parameters */
+        status = group->params.resolve_address_f(group->params.cb_group_obj,
+                idx, &remote_addr, &remote_addr_len);
+        if (status != UCS_OK) {
+            ucs_error("failed to obtain a UCP endpoint from the external callback");
+            return status;
+        }
 
-    status = ucp_ep_create(group->worker, &ep_params, &ucp_ep);
-    if (status != UCS_OK) {
-        goto connect_cleanup;
+        /* special case: connecting to a zero-length address means it's "debugging" */
+        if (ucs_unlikely(remote_addr_len == 0)) {
+            *ep_p = NULL;
+            return UCS_OK;
+        }
+
+        /* create an endpoint for communication with the remote member */
+        ucp_ep_params_t ep_params = {
+                .field_mask = UCP_EP_PARAM_FIELD_REMOTE_ADDRESS,
+                .address = remote_addr
+        };
+        status = ucp_ep_create(group->worker, &ep_params, &ucp_ep);
+        group->params.release_address_f(remote_addr);
+        if (status != UCS_OK) {
+            return status;
+        }
+
+        /* Store this endpoint, for future reference */
+        iter = kh_put(ucg_group_ep, &gctx->eps, idx, &ret);
+        kh_value(&gctx->eps, iter) = ucp_ep;
+
+        if ((flags & UCG_PLAN_CONNECT_FLAG_ASK_INCAST) ||
+                (flags & UCG_PLAN_CONNECT_FLAG_ASK_BCAST)) {
+            iface_ep_slot->peer_id = idx;
+            *ep_p = (uct_ep_h)iface_ep_slot->ep;
+            ucs_assert(*ep_p != NULL);
+            return UCS_OK;
+        }
     }
 
-    status = ucp_wireup_connect_remote(ucp_ep, ucp_ep_get_am_lane(ucp_ep));
-    if (status != UCS_OK) {
-        goto connect_cleanup;
-    }
-
-    while ((ucp_ep->flags & UCP_EP_FLAG_REMOTE_CONNECTED) == 0) {
-wait_again:
-        ucp_worker_progress(group->worker);
-    }
-
+    /* Connect for point-to-point communication */
+am_retry:
     *ep_p = ucp_ep_get_am_uct_ep(ucp_ep);
+    if (*ep_p == NULL) {
+        status = ucp_wireup_connect_remote(ucp_ep, ucp_ep_get_am_lane(ucp_ep));
+        if (status != UCS_OK) {
+            return status;
+        }
+    }
+
     if (ucp_proxy_ep_test(*ep_p)) {
         ucp_proxy_ep_t *proxy_ep = ucs_derived_of(*ep_p, ucp_proxy_ep_t);
         *ep_p = proxy_ep->uct_ep;
@@ -506,22 +601,21 @@ wait_again:
 
     ucs_assert((*ep_p)->iface != NULL);
     if ((*ep_p)->iface->ops.ep_am_short ==
-        (typeof((*ep_p)->iface->ops.ep_am_short))
-         ucs_empty_function_return_no_resource) {
-        goto wait_again;
+            (typeof((*ep_p)->iface->ops.ep_am_short))
+            ucs_empty_function_return_no_resource) {
+        ucp_worker_progress(group->worker);
+        goto am_retry;
     }
 
-    /* Register interfaces to be progressed in future calls */
-    ucg_groups_t *gctx = UCG_WORKER_TO_GROUPS_CTX(group->worker);
-    UCG_GROUP_PROGRESS_ADD((*ep_p)->iface, group);
-    UCG_GROUP_PROGRESS_ADD((*ep_p)->iface, gctx);
+    if (!(flags & UCG_PLAN_CONNECT_FLAG_ASK_LOOPBACK)) {
+        /* Register interfaces to be progressed in future calls */
+        UCG_GROUP_PROGRESS_ADD((*ep_p)->iface, group);
+        UCG_GROUP_PROGRESS_ADD((*ep_p)->iface, gctx);
+    }
 
-    // TODO: do it only once per interface type
     *ep_attr_p = ucp_ep_get_am_iface_attr(ucp_ep);
     *md_p      = ucp_ep_get_am_uct_md(ucp_ep);
     *md_attr_p = ucp_ep_get_am_uct_md_attr(ucp_ep);
 
-connect_cleanup:
-    group->params.release_address_f(remote_addr);
-    return status;
+    return UCS_OK;
 }

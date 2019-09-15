@@ -65,6 +65,14 @@ typedef struct uct_iface_ops {
                                 uct_pack_callback_t pack_cb, void *arg,
                                 unsigned flags);
 
+    ssize_t      (*ep_am_slock)(uct_ep_h tl_ep, uint8_t id,
+                                uct_locked_pack_callback_t pack_cb, void *arg,
+                                unsigned flags);
+
+    ssize_t      (*ep_am_block)(uct_ep_h tl_ep, uint8_t id,
+                                uct_locked_pack_callback_t pack_cb, void *arg,
+                                unsigned flags);
+
     ucs_status_t (*ep_am_zcopy)(uct_ep_h ep, uint8_t id, const void *header,
                                 unsigned header_length, const uct_iov_t *iov,
                                 size_t iovcnt, unsigned flags,

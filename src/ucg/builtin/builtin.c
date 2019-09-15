@@ -62,19 +62,6 @@ typedef struct ucg_builtin_ctx {
     ucg_builtin_comp_slot_t *slots[];
 } ucg_builtin_ctx_t;
 
-/*
- *
- */
-static ucs_status_t ucg_builtin_query(unsigned ucg_api_version,
-        ucg_plan_desc_t **desc_p, unsigned *num_descs_p)
-{
-    ucs_status_t status              = ucg_plan_single(&ucg_builtin_component,
-                                                       desc_p, num_descs_p);
-    (*desc_p)[0].modifiers_supported = UCG_BUILTIN_SUPPORT_MASK;
-    (*desc_p)[0].flags = 0;
-    return status;
-}
-
 static enum ucg_builtin_plan_topology_type
 ucg_builtin_choose_type(enum ucg_collective_modifiers flags,
                         ucg_group_member_index_t group_size)
@@ -166,10 +153,27 @@ static void ucg_builtin_msg_dump(ucp_worker_h worker, uct_am_trace_type_t type,
              (uint64_t)header->remote_offset, length - sizeof(*header));
 }
 
+static ucs_status_t ucg_builtin_query(unsigned ucg_api_version,
+        unsigned available_am_id, ucg_plan_desc_t **desc_p, unsigned *num_descs_p)
+{
+    /* Set the Active Message handler (before creating the UCT interfaces) */
+    ucp_am_handler_t* am_handler     = ucp_am_handlers + available_am_id;
+    am_handler->features             = UCP_FEATURE_GROUPS;
+    am_handler->cb                   = ucg_builtin_am_handler;
+    am_handler->tracer               = ucg_builtin_msg_dump;
+    am_handler->flags                = 0;
+
+    /* Return a simple description of the "Builtin" module */
+    ucs_status_t status              = ucg_plan_single(&ucg_builtin_component,
+                                                       desc_p, num_descs_p);
+    (*desc_p)[0].modifiers_supported = UCG_BUILTIN_SUPPORT_MASK;
+    (*desc_p)[0].flags = 0;
+    return status;
+}
+
 static ucs_status_t ucg_builtin_create(ucg_plan_component_t *plan_component,
                                        ucg_worker_h worker,
                                        ucg_group_h group,
-                                       unsigned base_am_id,
                                        ucg_group_id_t group_id,
                                        ucs_mpool_t *group_am_mp,
                                        const ucg_group_params_t *group_params)
@@ -203,16 +207,9 @@ static ucs_status_t ucg_builtin_create(ucg_plan_component_t *plan_component,
     gctx->group_id                = group_id;
     gctx->group_params            = group_params;
     gctx->config                  = plan_component->plan_config;
-    gctx->am_id                   = base_am_id;
+    gctx->am_id                   = plan_component->allocated_am_id;
     ucs_list_head_init(&gctx->send_head);
     ucs_list_head_init(&gctx->plan_head);
-
-    // TODO: only do this once...
-    ucp_am_handler_t* am_handler  = ucp_am_handlers + base_am_id;
-    am_handler->features          = UCP_FEATURE_GROUPS;
-    am_handler->cb                = ucg_builtin_am_handler;
-    am_handler->tracer            = ucg_builtin_msg_dump;
-    am_handler->flags             = 0;
 
     int i;
     for (i = 0; i < UCG_BUILTIN_MAX_CONCURRENT_OPS; i++) {
@@ -412,7 +409,11 @@ static void ucg_builtin_print(ucg_plan_t *plan, const ucg_collective_params_t *c
         for (peer_idx = 0;
              peer_idx < phase->ep_cnt;
              peer_idx++, ep++) {
-            printf("%lu,", phase->indexes[peer_idx]);
+            if (phase->indexes[peer_idx] == UCG_GROUP_MEMBER_INDEX_UNSPECIFIED) {
+                printf("<sm-coll>");
+            } else {
+                printf("%lu,", phase->indexes[peer_idx]);
+            }
         }
         printf("\n");
 #else
@@ -459,7 +460,9 @@ static void ucg_builtin_print(ucg_plan_t *plan, const ucg_collective_params_t *c
                         (char*)step.recv_buffer : "temp-buffer");
 
             flag = ((step.flags & UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SHORT) ||
+                    (step.flags & UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SLOCK) ||
                     (step.flags & UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BCOPY) ||
+                    (step.flags & UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BLOCK) ||
                     (step.flags & UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_ZCOPY));
             printf("\n\t\t      SEND: %i", flag);
             if (flag)
@@ -491,11 +494,11 @@ static void ucg_builtin_print(ucg_plan_t *plan, const ucg_collective_params_t *c
 
 ucs_status_t ucg_builtin_connect(ucg_builtin_group_ctx_t *ctx,
         ucg_group_member_index_t idx, ucg_builtin_plan_phase_t *phase,
-        unsigned phase_ep_index)
+        unsigned phase_ep_index, enum ucg_plan_connect_flags sm_coll_flags)
 {
     uct_ep_h ep;
-    ucs_status_t status = ucg_plan_connect(ctx->group, idx, &ep,
-            &phase->ep_attr, &phase->md, &phase->md_attr);
+    ucs_status_t status = ucg_plan_connect(ctx->group, idx, sm_coll_flags,
+            &ep, &phase->ep_attr, &phase->md, &phase->md_attr);
     if (ucs_unlikely(status != UCS_OK)) {
         return status;
     }
@@ -551,3 +554,4 @@ UCG_PLAN_COMPONENT_DEFINE(ucg_builtin_component, "builtin",
                           ucg_builtin_op_create, ucg_builtin_op_trigger,
                           ucg_builtin_op_discard, ucg_builtin_print, "BUILTIN_",
                           ucg_builtin_config_table, ucg_builtin_config_t);
+

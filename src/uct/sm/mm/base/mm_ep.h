@@ -40,7 +40,8 @@ struct uct_mm_ep {
     uct_mm_remote_seg_t  mapped_desc; /* pointer to the descriptor of the destination's shared_mem (FIFO) */
 };
 
-UCS_CLASS_DECLARE_NEW_FUNC(uct_mm_ep_t, uct_ep_t,const uct_ep_params_t *);
+UCS_CLASS_DECLARE(uct_mm_ep_t, const uct_ep_params_t *);
+UCS_CLASS_DECLARE_NEW_FUNC(uct_mm_ep_t, uct_ep_t, const uct_ep_params_t *);
 UCS_CLASS_DECLARE_DELETE_FUNC(uct_mm_ep_t, uct_ep_t);
 
 ucs_status_t uct_mm_ep_am_short(uct_ep_h tl_ep, uint8_t id, uint64_t header,
@@ -61,6 +62,9 @@ ucs_arbiter_cb_result_t uct_mm_ep_process_pending(ucs_arbiter_t *arbiter,
                                                   ucs_arbiter_elem_t *elem,
                                                   void *arg);
 
+void *uct_mm_ep_attach_remote_seg(uct_mm_ep_t *ep, uct_mm_iface_t *iface,
+                                  uct_mm_fifo_element_t *elem);
+
 static inline uint64_t uct_mm_remote_seg_hash(uct_mm_remote_seg_t *seg)
 {
     return seg->mmid % UCT_MM_BASE_ADDRESS_HASH_SIZE;
@@ -73,5 +77,8 @@ static inline int64_t uct_mm_remote_seg_compare(uct_mm_remote_seg_t *seg1, uct_m
 
 SGLIB_DEFINE_LIST_PROTOTYPES(uct_mm_remote_seg_t, uct_mm_remote_seg_compare, next)
 SGLIB_DEFINE_HASHED_CONTAINER_PROTOTYPES(uct_mm_remote_seg_t, UCT_MM_BASE_ADDRESS_HASH_SIZE, uct_mm_remote_seg_hash)
+
+ucs_status_t uct_mm_ep_get_remote_elem_ext(uct_mm_ep_t *ep, uint64_t head,
+                                           uct_mm_fifo_element_t **elem);
 
 #endif

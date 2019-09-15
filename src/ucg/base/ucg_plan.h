@@ -9,7 +9,7 @@
 #include "../api/ucg_plan_component.h"
 
 /* Functions on all planning components */
-ucs_status_t ucg_plan_query(ucg_plan_desc_t **resources_p, unsigned *num_resources_p);
+ucs_status_t ucg_plan_query(unsigned *next_am_id, ucg_plan_desc_t **resources_p, unsigned *num_resources_p);
 void ucg_plan_release_list(ucg_plan_desc_t *resources, unsigned resource_cnt);
 ucs_status_t ucg_plan_select_component(ucg_plan_desc_t *planners,
                                        unsigned num_planners,

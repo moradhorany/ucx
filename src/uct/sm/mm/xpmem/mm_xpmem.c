@@ -9,6 +9,7 @@
 
 #include <uct/sm/mm/base/mm_md.h>
 #include <uct/sm/mm/base/mm_iface.h>
+#include <uct/sm/mm/coll/mm_coll_iface.h>
 #include <ucs/debug/memtrack.h>
 #include <ucs/debug/log.h>
 
@@ -218,3 +219,4 @@ static uct_mm_mapper_ops_t uct_xpmem_mapper_ops = {
 
 UCT_MM_COMPONENT_DEFINE(uct_xpmem_md, "xpmem", &uct_xpmem_mapper_ops, uct, "XPMEM_")
 UCT_MD_REGISTER_TL(&uct_xpmem_md, &uct_mm_tl);
+UCT_MD_REGISTER_TL(&uct_xpmem_md, &uct_mm_coll_tl);

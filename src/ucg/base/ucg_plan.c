@@ -67,7 +67,7 @@ err:
     return status;
 }
 
-ucs_status_t ucg_plan_query(ucg_plan_desc_t **resources_p, unsigned *nums_p)
+ucs_status_t ucg_plan_query(unsigned *next_am_id, ucg_plan_desc_t **resources_p, unsigned *nums_p)
 {
     UCS_MODULE_FRAMEWORK_DECLARE(ucg);
     ucg_plan_desc_t *resources, *planners, *tmp;
@@ -81,7 +81,9 @@ ucs_status_t ucg_plan_query(ucg_plan_desc_t **resources_p, unsigned *nums_p)
     nums = 0;
 
     ucs_list_for_each(planc, &ucg_plan_components_list, list) {
-        status = planc->query(UCG_API_VERSION, &planners, &num_plans);
+        planc->allocated_am_id = (*next_am_id)++;
+        status = planc->query(UCG_API_VERSION, planc->allocated_am_id,
+                &planners, &num_plans);
         if (status != UCS_OK) {
             ucs_debug("Failed to query %s* resources: %s", planc->name,
                       ucs_status_string(status));
@@ -104,7 +106,7 @@ ucs_status_t ucg_plan_query(ucg_plan_desc_t **resources_p, unsigned *nums_p)
 
         for (i = 0; i < num_plans; ++i) {
             ucs_assertv_always(!strncmp(planc->name, planners[i].plan_name,
-                                       strlen(planc->name)),
+                                        strlen(planc->name)),
                                "Planner name must begin with topology component name."
                                "Planner name: %s Plan component name: %s ",
                                planners[i].plan_name, planc->name);
@@ -114,7 +116,7 @@ ucs_status_t ucg_plan_query(ucg_plan_desc_t **resources_p, unsigned *nums_p)
             status = ucg_plan_config_read(&bundle, planc->plan_config_table,
                                           planc->plan_config_size, NULL,
                                           planc->cfg_prefix);
-            planc->plan_config = bundle->data; // TODO:
+            planc->plan_config = bundle->data;
         }
         resources = tmp;
         memcpy(resources + nums, planners,
@@ -123,7 +125,7 @@ ucs_status_t ucg_plan_query(ucg_plan_desc_t **resources_p, unsigned *nums_p)
         ucs_free(planners);
     }
 
-    *resources_p     = resources;
+    *resources_p = resources;
     *nums_p = nums;
     return UCS_OK;
 

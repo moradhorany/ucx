@@ -9,6 +9,7 @@
 
 #include <ucs/config/types.h>
 #include <ucs/type/status.h>
+#include <ucs/type/spinlock.h>
 
 #include <stddef.h>
 #include <stdint.h>
@@ -253,6 +254,21 @@ typedef void (*uct_pending_purge_callback_t)(uct_pending_req_t *self,
  * @return  Size of the data was actually produced.
  */
 typedef size_t (*uct_pack_callback_t)(void *dest, void *arg);
+
+
+/**
+ * @ingroup UCT_RESOURCE
+ * @brief Callback for producing data into a shared buffer (needs locking).
+ *
+ * @param [in]  dest     Memory buffer to pack the data to.
+ * @param [in]  lock     Mutex for exclusive access to the buffer.
+ * @param [in]  arg      Custom user-argument.
+ *
+ * @return  Size of the data was actually produced.
+ */
+typedef size_t (*uct_locked_pack_callback_t)(void *dest,
+                                             ucs_spinlock_t *lock,
+                                             void *arg);
 
 
 /**

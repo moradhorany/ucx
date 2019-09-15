@@ -45,6 +45,8 @@ libuct_la_SOURCES = \
 	sm/mm/base/mm_iface.c \
 	sm/mm/base/mm_ep.c \
 	sm/mm/base/mm_md.c \
+	sm/mm/coll/mm_coll_iface.c \
+	sm/mm/coll/mm_coll_ep.c \
 	sm/mm/posix/mm_posix.c \
 	sm/mm/sysv/mm_sysv.c \
 	sm/self/self.c \

@@ -60,6 +60,7 @@ BEGIN_C_DECLS
  * @}
  */
 
+
 /**
  * @ingroup UCG_GROUP
  * @brief UCG group collective operation description.
@@ -362,13 +363,13 @@ void ucg_request_free(void *request);
 
 ucs_status_t ucg_init_version(unsigned api_major_version,
                               unsigned api_minor_version,
-                              const ucp_params_t *params,
-                              const ucp_config_t *config,
-                              ucp_context_h *context_p);
+                              const ucg_params_t *params,
+                              const ucg_config_t *config,
+                              ucg_context_h *context_p);
 
-ucs_status_t ucg_init(const ucp_params_t *params,
-                      const ucp_config_t *config,
-                      ucp_context_h *context_p);
+ucs_status_t ucg_init(const ucg_params_t *params,
+                      const ucg_config_t *config,
+                      ucg_context_h *context_p);
 
 END_C_DECLS
 

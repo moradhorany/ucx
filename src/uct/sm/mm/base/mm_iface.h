@@ -93,7 +93,7 @@ struct uct_mm_iface {
 
 
 struct uct_mm_fifo_element {
-    uint8_t         flags;
+    uint8_t         flags;          /* Indicates the owner of this element */
     uint8_t         am_id;          /* active message id */
     uint16_t        length;         /* length of actual data */
 
@@ -160,11 +160,29 @@ static inline void uct_mm_set_fifo_elems_ptr(void *mem_region, void **fifo_elems
    *fifo_elems = (void*) fifo_ctl + UCT_MM_FIFO_CTL_SIZE_ALIGNED;
 }
 
-void uct_mm_iface_release_desc(uct_recv_desc_t *self, void *desc);
 ucs_status_t uct_mm_flush();
 
 unsigned uct_mm_iface_progress(void *arg);
 
+ucs_status_t uct_mm_iface_query(uct_iface_h tl_iface,
+                                uct_iface_attr_t *iface_attr);
+
+void uct_mm_iface_release_desc(uct_recv_desc_t *self, void *desc);
+
+ucs_status_t uct_mm_iface_flush(uct_iface_h tl_iface, unsigned flags,
+                                uct_completion_t *comp);
+
+ucs_status_t uct_mm_assign_desc_to_fifo_elem(uct_mm_iface_t *iface,
+                                             uct_mm_fifo_element_t *fifo_elem_p,
+                                             unsigned need_new_desc);
+
 extern uct_tl_component_t uct_mm_tl;
+
+UCS_CLASS_DECLARE(uct_mm_iface_t, uct_md_h, uct_worker_h,
+                  const uct_iface_params_t*, const uct_iface_config_t*);
+
+ucs_status_t uct_mm_iface_process_recv_ext(uct_mm_iface_t *iface,
+                                           uct_mm_fifo_element_t* elem,
+                                           void *data);
 
 #endif

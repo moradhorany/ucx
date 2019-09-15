@@ -36,7 +36,9 @@ ucg_builtin_step_dummy_send(ucg_builtin_request_t *req,
         ucg_builtin_op_step_t *step, uct_ep_h ep, int is_single_send)
 {
     ucs_assert((step->flags & (UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SHORT |
+                               UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SLOCK |
                                UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BCOPY |
+                               UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BLOCK |
                                UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_ZCOPY)) == 0);
     return UCS_OK;
 }
@@ -46,7 +48,9 @@ ucg_builtin_step_am_short_one(ucg_builtin_request_t *req,
         ucg_builtin_op_step_t *step, uct_ep_h ep, int is_single_send)
 {
     ucs_assert((step->flags & (UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SHORT |
+                               UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SLOCK |
                                UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BCOPY |
+                               UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BLOCK |
                                UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_ZCOPY)) ==
                                        UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SHORT);
     int8_t *sbuf = (step->flags & UCG_BUILTIN_OP_STEP_FLAG_SEND_FROM_RECV_BUF) ?
@@ -72,7 +76,9 @@ ucg_builtin_step_am_short_max(ucg_builtin_request_t *req,
             step->uct_iface->ops.ep_am_short;
 
     ucs_assert((step->flags & (UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SHORT |
+                               UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SLOCK |
                                UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BCOPY |
+                               UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BLOCK |
                                UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_ZCOPY)) ==
                                        UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SHORT);
     ucs_assert(step->iter_offset != UCG_BUILTIN_OFFSET_PIPELINE_READY);
@@ -104,107 +110,165 @@ ucg_builtin_step_am_short_max(ucg_builtin_request_t *req,
     return status;
 }
 
-static size_t ucg_builtin_step_am_bcopy_single_frag_packer_sbuf(void *dest, void *arg)
-{
-    ucg_builtin_op_step_t *step      = (ucg_builtin_op_step_t*)arg;
-    ucg_builtin_header_t *header_ptr = (ucg_builtin_header_t*)dest;
-    header_ptr->header               = step->am_header.header;
-    int8_t *sbuf                     = step->send_buffer;
-
-    memcpy(header_ptr + 1, sbuf, step->buffer_length);
-    return sizeof(*header_ptr) + step->buffer_length;
+#define UCG_BUILTIN_BCOPY_PACK_CB(source, offset, length) {                    \
+    ucg_builtin_op_step_t *step      = (ucg_builtin_op_step_t*)arg;            \
+    ucg_builtin_header_t *header_ptr = (ucg_builtin_header_t*)dest;            \
+    header_ptr->header               = step->am_header.header;                 \
+                                                                               \
+    memcpy(header_ptr + 1, source + offset, length);                           \
+    return sizeof(*header_ptr) + length;                                       \
 }
+
+static size_t ucg_builtin_step_am_bcopy_single_frag_packer_sbuf(void *dest, void *arg)
+UCG_BUILTIN_BCOPY_PACK_CB(step->send_buffer, 0,                 step->buffer_length)
 
 static size_t ucg_builtin_step_am_bcopy_full_frag_packer_sbuf(void *dest, void *arg)
-{
-    ucg_builtin_op_step_t *step      = (ucg_builtin_op_step_t*)arg;
-    ucg_builtin_header_t *header_ptr = (ucg_builtin_header_t*)dest;
-    header_ptr->header               = step->am_header.header;
-    int8_t *sbuf                     = step->send_buffer;
-
-    memcpy(header_ptr + 1, sbuf + step->iter_offset, step->fragment_length);
-    return sizeof(*header_ptr) + step->fragment_length;
-}
+UCG_BUILTIN_BCOPY_PACK_CB(step->send_buffer, step->iter_offset, step->fragment_length)
 
 static size_t ucg_builtin_step_am_bcopy_partial_frag_packer_sbuf(void *dest, void *arg)
-{
-    ucg_builtin_op_step_t *step      = (ucg_builtin_op_step_t*)arg;
-    ucg_offset_t last_frag_length    = step->buffer_length - step->iter_offset;
-    ucg_builtin_header_t *header_ptr = (ucg_builtin_header_t*)dest;
-    header_ptr->header               = step->am_header.header;
-    int8_t *sbuf                     = step->send_buffer;
-
-    memcpy(header_ptr + 1, sbuf + step->iter_offset, last_frag_length);
-    return sizeof(*header_ptr) + last_frag_length;
-}
+UCG_BUILTIN_BCOPY_PACK_CB(step->send_buffer, step->iter_offset, step->buffer_length - step->iter_offset)
 
 static size_t ucg_builtin_step_am_bcopy_single_frag_packer_rbuf(void *dest, void *arg)
-{
-    ucg_builtin_op_step_t *step      = (ucg_builtin_op_step_t*)arg;
-    ucg_builtin_header_t *header_ptr = (ucg_builtin_header_t*)dest;
-    header_ptr->header               = step->am_header.header;
-    int8_t *sbuf                     = step->recv_buffer;
-
-    memcpy(header_ptr + 1, sbuf, step->buffer_length);
-    return sizeof(*header_ptr) + step->buffer_length;
-}
+UCG_BUILTIN_BCOPY_PACK_CB(step->recv_buffer, 0,                 step->buffer_length)
 
 static size_t ucg_builtin_step_am_bcopy_full_frag_packer_rbuf(void *dest, void *arg)
-{
-    ucg_builtin_op_step_t *step      = (ucg_builtin_op_step_t*)arg;
-    ucg_builtin_header_t *header_ptr = (ucg_builtin_header_t*)dest;
-    header_ptr->header               = step->am_header.header;
-    int8_t *sbuf                     = step->recv_buffer;
-
-    memcpy(header_ptr + 1, sbuf + step->iter_offset, step->fragment_length);
-    return sizeof(*header_ptr) + step->fragment_length;
-}
+UCG_BUILTIN_BCOPY_PACK_CB(step->recv_buffer, step->iter_offset, step->fragment_length)
 
 static size_t ucg_builtin_step_am_bcopy_partial_frag_packer_rbuf(void *dest, void *arg)
-{
-    ucg_builtin_op_step_t *step      = (ucg_builtin_op_step_t*)arg;
-    ucg_offset_t last_frag_length    = step->buffer_length - step->iter_offset;
-    ucg_builtin_header_t *header_ptr = (ucg_builtin_header_t*)dest;
-    header_ptr->header               = step->am_header.header;
-    int8_t *sbuf                     = step->recv_buffer;
+UCG_BUILTIN_BCOPY_PACK_CB(step->recv_buffer, step->iter_offset, step->buffer_length - step->iter_offset)
 
-    memcpy(header_ptr + 1, sbuf + step->iter_offset, last_frag_length);
-    return sizeof(*header_ptr) + last_frag_length;
+#define UCG_BUILTIN_COLL_PACK_CB(source, offset, length, part) {               \
+    ucg_builtin_request_t *req = (ucg_builtin_request_t*)arg;                  \
+                                                                               \
+    /* First writer to this buffer - overwrite the existing data */            \
+    if (ucs_unlikely(!lock)) {                                                 \
+        arg = (ucg_builtin_op_step_t*)(req->step);                             \
+        UCG_BUILTIN_BCOPY_PACK_CB(source, offset, length)                      \
+    } else {                                                                   \
+        /* Otherwise - reduce onto existing data */                            \
+        ucg_builtin_op_step_t *step = (ucg_builtin_op_step_t*)arg;             \
+        ucg_builtin_header_t *header_ptr = (ucg_builtin_header_t*)dest;        \
+        return sizeof(*header_ptr) + ucg_builtin_atomic_reduce_ ## part        \
+                (req, offset, source, header_ptr + 1, length, lock);           \
+    }                                                                          \
+}
+
+static size_t ucg_builtin_step_am_coll_single_frag_packer_sbuf(void *dest, ucs_spinlock_t *lock, void *arg)
+UCG_BUILTIN_COLL_PACK_CB(step->send_buffer, 0,                 step->buffer_length, partial)
+
+static size_t ucg_builtin_step_am_coll_full_frag_packer_sbuf(void *dest, ucs_spinlock_t *lock, void *arg)
+UCG_BUILTIN_COLL_PACK_CB(step->send_buffer, step->iter_offset, step->fragment_length, full)
+
+static size_t ucg_builtin_step_am_coll_partial_frag_packer_sbuf(void *dest, ucs_spinlock_t *lock, void *arg)
+UCG_BUILTIN_COLL_PACK_CB(step->send_buffer, step->iter_offset, step->buffer_length - step->iter_offset, partial)
+
+static size_t ucg_builtin_step_am_coll_single_frag_packer_rbuf(void *dest, ucs_spinlock_t *lock, void *arg)
+UCG_BUILTIN_COLL_PACK_CB(step->recv_buffer, 0,                 step->buffer_length, partial)
+
+static size_t ucg_builtin_step_am_coll_full_frag_packer_rbuf(void *dest, ucs_spinlock_t *lock, void *arg)
+UCG_BUILTIN_COLL_PACK_CB(step->recv_buffer, step->iter_offset, step->fragment_length, full)
+
+static size_t ucg_builtin_step_am_coll_partial_frag_packer_rbuf(void *dest, ucs_spinlock_t *lock, void *arg)
+UCG_BUILTIN_COLL_PACK_CB(step->recv_buffer, step->iter_offset, step->buffer_length - step->iter_offset, partial)
+
+ucs_status_t static UCS_F_ALWAYS_INLINE
+ucg_builtin_step_am_packed_send_one_common(ucg_builtin_request_t *req,
+        ucg_builtin_op_step_t *step, uct_ep_h ep, uct_pack_callback_t packer_cb,
+        enum ucg_builtin_op_step_flags type, void *cb_arg)
+{
+    ucs_assert((step->flags & (UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SHORT |
+                               UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SLOCK |
+                               UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BCOPY |
+                               UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BLOCK |
+                               UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_ZCOPY)) == type);
+
+    /* send active message to remote endpoint */
+    ssize_t len;
+    switch (type) {
+    case UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SLOCK:
+        len = step->uct_iface->ops.ep_am_slock(ep, step->am_id, (uct_locked_pack_callback_t)packer_cb, cb_arg, 0);
+        break;
+    case UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BCOPY:
+        len = step->uct_iface->ops.ep_am_bcopy(ep, step->am_id, packer_cb, cb_arg, 0);
+        break;
+    case UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BLOCK:
+        len = step->uct_iface->ops.ep_am_block(ep, step->am_id, (uct_locked_pack_callback_t)packer_cb, cb_arg, 0);
+        break;
+    default:
+        return UCS_ERR_INVALID_PARAM;
+    }
+    return (ucs_unlikely(len < 0)) ? (ucs_status_t)len : UCS_OK;
+}
+
+ucs_status_t static UCS_F_ALWAYS_INLINE
+ucg_builtin_step_am_slock_one(ucg_builtin_request_t *req,
+        ucg_builtin_op_step_t *step, uct_ep_h ep, int is_single_send)
+{
+    /* send active message to remote endpoint */
+    int use_rbuf = (step->flags & UCG_BUILTIN_OP_STEP_FLAG_SEND_FROM_RECV_BUF);
+    return ucg_builtin_step_am_packed_send_one_common(req, step, ep, use_rbuf ?
+            (uct_pack_callback_t)ucg_builtin_step_am_coll_single_frag_packer_rbuf:
+            (uct_pack_callback_t)ucg_builtin_step_am_coll_single_frag_packer_sbuf,
+            UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SLOCK, req);
 }
 
 ucs_status_t static UCS_F_ALWAYS_INLINE
 ucg_builtin_step_am_bcopy_one(ucg_builtin_request_t *req,
         ucg_builtin_op_step_t *step, uct_ep_h ep, int is_single_send)
 {
-    ucs_assert((step->flags & (UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SHORT |
-                               UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BCOPY |
-                               UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_ZCOPY)) ==
-                                       UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BCOPY);
-
     /* send active message to remote endpoint */
     int use_rbuf = (step->flags & UCG_BUILTIN_OP_STEP_FLAG_SEND_FROM_RECV_BUF);
-    ssize_t len = step->uct_iface->ops.ep_am_bcopy(ep, step->am_id, use_rbuf ?
-            ucg_builtin_step_am_bcopy_single_frag_packer_rbuf :
-            ucg_builtin_step_am_bcopy_single_frag_packer_sbuf, step, 0);
-    return (ucs_unlikely(len < 0)) ? (ucs_status_t)len : UCS_OK;
+    return ucg_builtin_step_am_packed_send_one_common(req, step, ep, use_rbuf ?
+            ucg_builtin_step_am_bcopy_single_frag_packer_rbuf:
+            ucg_builtin_step_am_bcopy_single_frag_packer_sbuf,
+            UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BCOPY, step);
 }
 
 ucs_status_t static UCS_F_ALWAYS_INLINE
-ucg_builtin_step_am_bcopy_max(ucg_builtin_request_t *req,
-        ucg_builtin_op_step_t *step, uct_ep_h ep, int is_single_send) {
+ucg_builtin_step_am_block_one(ucg_builtin_request_t *req,
+        ucg_builtin_op_step_t *step, uct_ep_h ep, int is_single_send)
+{
+    /* send active message to remote endpoint */
+    int use_rbuf = (step->flags & UCG_BUILTIN_OP_STEP_FLAG_SEND_FROM_RECV_BUF);
+    return ucg_builtin_step_am_packed_send_one_common(req, step, ep, use_rbuf ?
+            (uct_pack_callback_t)ucg_builtin_step_am_coll_single_frag_packer_rbuf:
+            (uct_pack_callback_t)ucg_builtin_step_am_coll_single_frag_packer_sbuf,
+            UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BLOCK, req);
+}
+
+typedef ssize_t (*packed_send_t)(uct_ep_h, uint8_t, uct_pack_callback_t, void*, unsigned);
+
+ucs_status_t static UCS_F_ALWAYS_INLINE
+ucg_builtin_step_am_packed_send_max_common(ucg_builtin_request_t *req,
+        ucg_builtin_op_step_t *step, uct_ep_h ep, int is_single_send,
+        uct_pack_callback_t packer_full_cb,
+        uct_pack_callback_t packer_partial_cb,
+        enum ucg_builtin_op_step_flags type, void *cb_arg) {
     ssize_t len;
     unsigned am_id           = step->am_id;
     ucg_offset_t frag_size   = step->fragment_length;
     ucg_offset_t iter_limit  = step->buffer_length - frag_size;
-    int use_rbuf             = step->flags &
-                               UCG_BUILTIN_OP_STEP_FLAG_SEND_FROM_RECV_BUF;
-    ssize_t (*ep_am_bcopy)(uct_ep_h, uint8_t, uct_pack_callback_t, void*, unsigned) =
-            step->uct_iface->ops.ep_am_bcopy;
+
+    packed_send_t send_func;
+    switch (type) {
+    case UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SLOCK:
+        send_func = (packed_send_t)step->uct_iface->ops.ep_am_slock;
+        break;
+    case UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BCOPY:
+        send_func = step->uct_iface->ops.ep_am_bcopy;
+        break;
+    case UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BLOCK:
+        send_func = (packed_send_t)step->uct_iface->ops.ep_am_block;
+        break;
+    default:
+        return UCS_ERR_INVALID_PARAM;
+    }
 
     ucs_assert((step->flags & (UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SHORT |
+                               UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SLOCK |
                                UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BCOPY |
-                               UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_ZCOPY)) ==
-                                       UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BCOPY);
+                               UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BLOCK |
+                               UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_ZCOPY)) == type);
     ucs_assert(step->iter_offset != UCG_BUILTIN_OFFSET_PIPELINE_READY);
     ucs_assert(step->iter_offset != UCG_BUILTIN_OFFSET_PIPELINE_PENDING);
 
@@ -212,9 +276,7 @@ ucg_builtin_step_am_bcopy_max(ucg_builtin_request_t *req,
     if (ucs_likely(step->iter_offset < iter_limit)) {
         /* send every fragment but the last */
         do {
-            len = ep_am_bcopy(ep, am_id, use_rbuf ?
-                    ucg_builtin_step_am_bcopy_full_frag_packer_rbuf :
-                    ucg_builtin_step_am_bcopy_full_frag_packer_sbuf, step, 0);
+            len = send_func(ep, am_id, packer_full_cb, cb_arg, 0);
 
             if (is_single_send) {
                 return ucs_unlikely(len < 0) ? (ucs_status_t)len : UCS_OK;
@@ -232,9 +294,7 @@ ucg_builtin_step_am_bcopy_max(ucg_builtin_request_t *req,
     }
 
     /* Send last fragment of the message */
-    len = ep_am_bcopy(ep, am_id, use_rbuf ?
-            ucg_builtin_step_am_bcopy_partial_frag_packer_rbuf :
-            ucg_builtin_step_am_bcopy_partial_frag_packer_sbuf, step, 0);
+    len = send_func(ep, am_id, packer_partial_cb, cb_arg, 0);
     if (ucs_unlikely(len < 0)) {
         return (ucs_status_t)len;
     }
@@ -242,6 +302,46 @@ ucg_builtin_step_am_bcopy_max(ucg_builtin_request_t *req,
     step->am_header.remote_offset = 0;
     step->iter_offset = 0;
     return UCS_OK;
+}
+
+ucs_status_t static UCS_F_ALWAYS_INLINE
+ucg_builtin_step_am_slock_max(ucg_builtin_request_t *req,
+        ucg_builtin_op_step_t *step, uct_ep_h ep, int is_single_send) {
+    int use_rbuf = step->flags & UCG_BUILTIN_OP_STEP_FLAG_SEND_FROM_RECV_BUF;
+    return ucg_builtin_step_am_packed_send_max_common(req, step, ep, is_single_send,
+            ((uct_pack_callback_t)(use_rbuf ?
+                    ucg_builtin_step_am_coll_full_frag_packer_rbuf :
+                    ucg_builtin_step_am_coll_full_frag_packer_sbuf)),
+            ((uct_pack_callback_t)(use_rbuf ?
+                    ucg_builtin_step_am_coll_partial_frag_packer_rbuf :
+                    ucg_builtin_step_am_coll_partial_frag_packer_sbuf)),
+            UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SLOCK, req);
+}
+
+ucs_status_t static UCS_F_ALWAYS_INLINE
+ucg_builtin_step_am_bcopy_max(ucg_builtin_request_t *req,
+        ucg_builtin_op_step_t *step, uct_ep_h ep, int is_single_send) {
+    int use_rbuf = step->flags & UCG_BUILTIN_OP_STEP_FLAG_SEND_FROM_RECV_BUF;
+    return ucg_builtin_step_am_packed_send_max_common(req, step, ep, is_single_send,
+            use_rbuf ? ucg_builtin_step_am_bcopy_full_frag_packer_rbuf :
+                       ucg_builtin_step_am_bcopy_full_frag_packer_sbuf,
+            use_rbuf ? ucg_builtin_step_am_bcopy_partial_frag_packer_rbuf :
+                       ucg_builtin_step_am_bcopy_partial_frag_packer_sbuf,
+            UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BCOPY, step);
+}
+
+ucs_status_t static UCS_F_ALWAYS_INLINE
+ucg_builtin_step_am_block_max(ucg_builtin_request_t *req,
+        ucg_builtin_op_step_t *step, uct_ep_h ep, int is_single_send) {
+    int use_rbuf = step->flags & UCG_BUILTIN_OP_STEP_FLAG_SEND_FROM_RECV_BUF;
+    return ucg_builtin_step_am_packed_send_max_common(req, step, ep, is_single_send,
+            ((uct_pack_callback_t)(use_rbuf ?
+                    ucg_builtin_step_am_coll_full_frag_packer_rbuf :
+                    ucg_builtin_step_am_coll_full_frag_packer_sbuf)),
+            ((uct_pack_callback_t)(use_rbuf ?
+                    ucg_builtin_step_am_coll_partial_frag_packer_rbuf :
+                    ucg_builtin_step_am_coll_partial_frag_packer_sbuf)),
+            UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BLOCK, req);
 }
 
 ucs_status_t static UCS_F_ALWAYS_INLINE
@@ -259,7 +359,9 @@ ucg_builtin_step_am_zcopy_one(ucg_builtin_request_t *req,
     };
 
     ucs_assert((step->flags & (UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SHORT |
+                               UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SLOCK |
                                UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BCOPY |
+                               UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BLOCK |
                                UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_ZCOPY)) ==
                                        UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_ZCOPY);
 
@@ -300,7 +402,9 @@ ucg_builtin_step_am_zcopy_max(ucg_builtin_request_t *req,
 
 
     ucs_assert((step->flags & (UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SHORT |
+                               UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SLOCK |
                                UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BCOPY |
+                               UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BLOCK |
                                UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_ZCOPY)) ==
                                        UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_ZCOPY);
     ucs_assert(step->iter_offset != UCG_BUILTIN_OFFSET_PIPELINE_READY);
@@ -568,8 +672,12 @@ UCS_PROFILE_FUNC(ucs_status_t, ucg_builtin_step_execute, (req, user_req),
               ucg_builtin_step_dummy_send);
     case_send(req, user_req, step, phase, UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SHORT,
               ucg_builtin_step_am_short_one);
+    case_send(req, user_req, step, phase, UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SLOCK,
+              ucg_builtin_step_am_slock_one);
     case_send(req, user_req, step, phase, UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BCOPY,
               ucg_builtin_step_am_bcopy_one);
+    case_send(req, user_req, step, phase, UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BLOCK,
+              ucg_builtin_step_am_block_one);
     case_send(req, user_req, step, phase, UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_ZCOPY,
               ucg_builtin_step_am_zcopy_one);
 
@@ -580,8 +688,14 @@ UCS_PROFILE_FUNC(ucs_status_t, ucg_builtin_step_execute, (req, user_req),
                                           UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SHORT,
               ucg_builtin_step_am_short_max);
     case_send(req, user_req, step, phase, UCG_BUILTIN_OP_STEP_FLAG_FRAGMENTED|
+                                          UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SLOCK,
+              ucg_builtin_step_am_slock_max);
+    case_send(req, user_req, step, phase, UCG_BUILTIN_OP_STEP_FLAG_FRAGMENTED|
                                           UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BCOPY,
               ucg_builtin_step_am_bcopy_max);
+    case_send(req, user_req, step, phase, UCG_BUILTIN_OP_STEP_FLAG_FRAGMENTED|
+                                          UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BLOCK,
+              ucg_builtin_step_am_block_max);
     case_send(req, user_req, step, phase, UCG_BUILTIN_OP_STEP_FLAG_FRAGMENTED|
                                           UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_ZCOPY,
               ucg_builtin_step_am_zcopy_max);
@@ -743,13 +857,21 @@ ucg_builtin_step_send_flags(ucg_builtin_op_step_t *step,
      */
     if (ucs_likely(length <= phase->max_short_one)) {
         /* Short send - single message */
-        *send_flag            = UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SHORT;
+        *send_flag            = (phase->flags & UCG_PLAN_FLAG_NEEDS_LOCKING) ?
+                                UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SLOCK:
+                                UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SHORT;
         step->fragments       = 1;
     } else if (ucs_likely(length <= phase->max_short_max)) {
         /* Short send - multiple messages */
-        *send_flag = (enum ucg_builtin_op_step_flags)
-                     (UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SHORT |
-                      UCG_BUILTIN_OP_STEP_FLAG_FRAGMENTED);
+        if (phase->flags & UCG_PLAN_FLAG_NEEDS_LOCKING) {
+            *send_flag        = (enum ucg_builtin_op_step_flags)
+                                (UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SLOCK |
+                                 UCG_BUILTIN_OP_STEP_FLAG_FRAGMENTED);
+        } else {
+            *send_flag        = (enum ucg_builtin_op_step_flags)
+                                (UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_SHORT |
+                                 UCG_BUILTIN_OP_STEP_FLAG_FRAGMENTED);
+        }
         step->fragment_length = phase->max_short_one -
                                (phase->max_short_one % dt_len);
         step->fragments       = length / step->fragment_length +
@@ -779,14 +901,22 @@ ucg_builtin_step_send_flags(ucg_builtin_op_step_t *step,
      */
     } else if (ucs_likely(length <= phase->max_bcopy_one)) {
         /* BCopy send - single message */
-        *send_flag = UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BCOPY;
+        *send_flag            = (phase->flags & UCG_PLAN_FLAG_NEEDS_LOCKING) ?
+                                UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BLOCK:
+                                UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BCOPY;
         step->fragment_length = step->buffer_length;
         step->fragments       = 1;
     } else {
         /* BCopy send - multiple messages */
-        *send_flag            = (enum ucg_builtin_op_step_flags)
+        if (phase->flags & UCG_PLAN_FLAG_NEEDS_LOCKING) {
+            *send_flag        = (enum ucg_builtin_op_step_flags)
+                                (UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BLOCK |
+                                 UCG_BUILTIN_OP_STEP_FLAG_FRAGMENTED);
+        } else {
+            *send_flag        = (enum ucg_builtin_op_step_flags)
                                 (UCG_BUILTIN_OP_STEP_FLAG_SEND_AM_BCOPY |
                                  UCG_BUILTIN_OP_STEP_FLAG_FRAGMENTED);
+        }
         step->fragment_length = phase->max_bcopy_one -
                                (phase->max_bcopy_one % dt_len);
         step->fragments       = length / step->fragment_length +
