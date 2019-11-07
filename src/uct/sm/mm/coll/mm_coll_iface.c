@@ -172,7 +172,7 @@ static UCS_CLASS_INIT_FUNC(uct_mm_coll_iface_t, uct_md_h md, uct_worker_h worker
         mm_coll_fifo_elem_p->super.flags = UCT_MM_FIFO_ELEM_FLAG_OWNER;
         mm_coll_fifo_elem_p->pending = 0;
 
-        status = ucs_spinlock_init_sm(&mm_coll_fifo_elem_p->lock);
+        status = ucs_spinlock_sm_init(&mm_coll_fifo_elem_p->lock);
         if (status != UCS_OK) {
             return status;
         }
@@ -185,7 +185,7 @@ static UCS_CLASS_INIT_FUNC(uct_mm_coll_iface_t, uct_md_h md, uct_worker_h worker
         mm_coll_fifo_elem_p->super.flags = UCT_MM_FIFO_ELEM_FLAG_OWNER;
         mm_coll_fifo_elem_p->pending = 0;
 
-        status = ucs_spinlock_init_sm(&mm_coll_fifo_elem_p->lock);
+        status = ucs_spinlock_sm_init(&mm_coll_fifo_elem_p->lock);
         if (status != UCS_OK) {
             return status;
         }
