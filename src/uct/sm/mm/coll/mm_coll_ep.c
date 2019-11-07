@@ -75,32 +75,39 @@ retry:
     }
 
     if (ucs_unlikely(elem->pending == 0)) {
-        /* First element - lock, and indicate the memory requires overwriting */
         ucs_spin_lock_alone(&elem->lock);
-        if (payload != NULL) {
-            *(uint64_t*)(elem + 1) = header;
-            memcpy((void*) (elem + 1) + sizeof(header), payload, length);
-            length += sizeof(header);
-        } else if (pack_cb != NULL) {
-            length = pack_cb(base_address, arg);
-        } else {
-            length = locked_pack_cb(base_address, NULL, arg);
+
+        if (ucs_unlikely(elem->pending == 0)) {
+            /* First element - lock, and indicate the memory requires overwriting */
+            if (payload != NULL) {
+                *(uint64_t*)(elem + 1) = header;
+                memcpy((void*) (elem + 1) + sizeof(header), payload, length);
+                length += sizeof(header);
+            } else if (pack_cb != NULL) {
+                length = pack_cb(base_address, arg);
+            } else {
+                length = locked_pack_cb(base_address, NULL, arg);
+            }
+
+            pending = elem->pending = iface->peer_mask;
+            ucs_spin_unlock_alone(&elem->lock);
+            goto done_reducing;
         }
 
-        pending = elem->pending = iface->peer_mask;
         ucs_spin_unlock_alone(&elem->lock);
-    } else {
-        ucs_assert(payload == NULL); /* In ep_am_short(bcast) I'm always first */
-        ucs_assert(pack_cb == NULL); /* In ep_am_bcopy(bcast) I'm always first */
-        ucs_assert(elem->pending & iface->my_mask); /* I'm still pending */
-
-        /* Reduce into the buffer */
-        length = locked_pack_cb(base_address, &elem->lock, arg);
-
-        /* Mark myself as finished regarding this element */
-        pending = ucs_atomic_fand64(&elem->pending, ~iface->my_mask) & ~iface->my_mask;
     }
 
+    ucs_assert(payload == NULL); /* In ep_am_short(bcast) I'm always first */
+    ucs_assert(pack_cb == NULL); /* In ep_am_bcopy(bcast) I'm always first */
+    ucs_assert(elem->pending & iface->my_mask); /* I'm still pending */
+
+    /* Reduce into the buffer */
+    length = locked_pack_cb(base_address, &elem->lock, arg);
+
+    /* Mark myself as finished regarding this element */
+    pending = ucs_atomic_fand64(&elem->pending, ~iface->my_mask) & ~iface->my_mask;
+
+done_reducing:
     /* Check if this sender is the last expected sender for this element */
     if (ucs_unlikely(pending == coll_ep->tx_peer_mask)) {
         /* Write the per-collective fields (only once per element) */
