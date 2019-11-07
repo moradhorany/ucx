@@ -8,6 +8,7 @@
 #define UCS_SPINLOCK_H
 
 #include <ucs/type/status.h>
+#include <ucs/debug/assert.h>
 #include <pthread.h>
 
 BEGIN_C_DECLS
@@ -26,7 +27,7 @@ typedef struct ucs_spinlock {
 
 ucs_status_t ucs_spinlock_init(ucs_spinlock_t *lock);
 
-ucs_status_t ucs_spinlock_init_sm(ucs_spinlock_t *lock);
+ucs_status_t ucs_spinlock_sm_init(ucs_spinlock_t *lock);
 
 void ucs_spinlock_destroy(ucs_spinlock_t *lock);
 
@@ -47,6 +48,18 @@ static inline void ucs_spin_lock(ucs_spinlock_t *lock)
     pthread_spin_lock(&lock->lock);
     lock->owner = self;
     ++lock->count;
+}
+
+static inline void ucs_spin_lock_alone(ucs_spinlock_t *lock)
+{
+#if ENABLE_ASSERT
+    pthread_t self = pthread_self();
+    ucs_assert(!ucs_spin_is_owner(lock, self));
+    lock->owner = self;
+    ucs_assert(lock->count++ == 0);
+#endif
+
+    pthread_spin_lock(&lock->lock);
 }
 
 static inline int ucs_spin_trylock(ucs_spinlock_t *lock)
@@ -72,6 +85,19 @@ static inline void ucs_spin_unlock(ucs_spinlock_t *lock)
     --lock->count;
     if (lock->count == 0) {
         lock->owner = 0xfffffffful;
+        pthread_spin_unlock(&lock->lock);
+    }
+}
+
+static inline void ucs_spin_unlock_alone(ucs_spinlock_t *lock)
+{
+#if ENABLE_ASSERT
+    ucs_assert(--lock->count == 0);
+    ucs_assert(lock->owner == pthread_self());
+    lock->owner = 0xfffffffful;
+#endif
+
+    if (lock->count == 0) {
         pthread_spin_unlock(&lock->lock);
     }
 }

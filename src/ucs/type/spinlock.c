@@ -28,7 +28,7 @@ ucs_status_t ucs_spinlock_init(ucs_spinlock_t *lock) {
     return ucs_spinlock_init_internal(lock, PTHREAD_PROCESS_PRIVATE);
 }
 
-ucs_status_t ucs_spinlock_init_sm(ucs_spinlock_t *lock) {
+ucs_status_t ucs_spinlock_sm_init(ucs_spinlock_t *lock) {
     return ucs_spinlock_init_internal(lock, PTHREAD_PROCESS_SHARED);
 }
 

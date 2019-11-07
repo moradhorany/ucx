@@ -76,7 +76,7 @@ retry:
 
     if (ucs_unlikely(elem->pending == 0)) {
         /* First element - lock, and indicate the memory requires overwriting */
-        ucs_spin_lock(&elem->lock);
+        ucs_spin_lock_alone(&elem->lock);
         if (payload != NULL) {
             *(uint64_t*)(elem + 1) = header;
             memcpy((void*) (elem + 1) + sizeof(header), payload, length);
@@ -88,7 +88,7 @@ retry:
         }
 
         pending = elem->pending = iface->peer_mask;
-        ucs_spin_unlock(&elem->lock);
+        ucs_spin_unlock_alone(&elem->lock);
     } else {
         ucs_assert(payload == NULL); /* In ep_am_short(bcast) I'm always first */
         ucs_assert(pack_cb == NULL); /* In ep_am_bcopy(bcast) I'm always first */
