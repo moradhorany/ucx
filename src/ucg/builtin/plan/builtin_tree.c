@@ -124,6 +124,8 @@ ucs_status_t ucg_builtin_tree_connect(ucg_builtin_plan_t *tree,
         }
 
         if (host_up_cnt + host_down_cnt) {
+            /* Add the host-level parent to the end of the host-array, so that
+             * forwarding the message to the parent is all included in one step */
             if (host_up_cnt) host_down[host_down_cnt++] = host_up[0];
             status = ucg_builtin_tree_connect_phase(phase++, params, step_offset,
                     &iter_eps, host_down, host_down_cnt, fanin_method,
@@ -146,6 +148,8 @@ ucs_status_t ucg_builtin_tree_connect(ucg_builtin_plan_t *tree,
         }
 
         if (net_up_cnt + net_down_cnt) {
+            /* Add the network-level parent to the end of the host-array, so that
+             * forwarding the message to the parent is all included in one step */
             if (net_up_cnt) net_down[net_down_cnt++] = net_up[0];
             status = ucg_builtin_tree_connect_phase(phase++, params, step_offset + 1,
                     &iter_eps, net_down, net_down_cnt, fanin_method, 0);
@@ -155,6 +159,9 @@ ucs_status_t ucg_builtin_tree_connect(ucg_builtin_plan_t *tree,
         if ((params->topo_type == UCG_PLAN_TREE_FANIN) || (status != UCS_OK)) {
             break;
         } else {
+            /* If I have a host-level or network-level parent (it was added to
+             * the end of the host-array) - now is the time to discard it by
+             * decrementing the counter for each host-array */
             if (net_down_cnt) net_down_cnt--;
             if (host_down_cnt) host_down_cnt--;
         }
@@ -173,10 +180,10 @@ ucs_status_t ucg_builtin_tree_connect(ucg_builtin_plan_t *tree,
 
         if (net_up_cnt + net_down_cnt) {
             for (idx = 0; idx < net_down_cnt; idx++, net_up_cnt++) {
-                net_up[net_up_cnt] = net_down[idx];
                 if (net_up_cnt == UCG_BUILTIN_TREE_MAX_RADIX) {
                     return UCS_ERR_BUFFER_TOO_SMALL;
                 }
+                net_up[net_up_cnt] = net_down[idx];
             }
             status = ucg_builtin_tree_connect_phase(phase++, params, step_offset + 2,
                     &iter_eps, net_up, net_up_cnt, fanout_method, 0);
@@ -196,10 +203,10 @@ ucs_status_t ucg_builtin_tree_connect(ucg_builtin_plan_t *tree,
 
         if (host_up_cnt + host_down_cnt) {
             for (idx = 0; idx < host_down_cnt; idx++, host_up_cnt++) {
-                host_up[host_up_cnt] = host_down[idx];
                 if (host_up_cnt == UCG_BUILTIN_TREE_MAX_RADIX) {
                     return UCS_ERR_BUFFER_TOO_SMALL;
                 }
+                host_up[host_up_cnt] = host_down[idx];
             }
             status = ucg_builtin_tree_connect_phase(phase++, params, step_offset + 3,
                     &iter_eps, host_up, host_up_cnt, fanout_method,
