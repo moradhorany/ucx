@@ -534,6 +534,7 @@ ucs_status_t ucg_plan_connect(ucg_group_h group,
         status = uct_mm_coll_iface_get_ep(iface, idx, &iface_ep_slot);
         if (status == UCS_OK) {
             *ep_p = (uct_ep_h)iface_ep_slot->ep;
+            ucs_assert(*ep_p != NULL);
             return UCS_OK;
         }
         ucs_assert(status == UCS_ERR_NO_ELEM);
@@ -576,9 +577,9 @@ ucs_status_t ucg_plan_connect(ucg_group_h group,
         kh_value(&gctx->eps, iter) = ucp_ep;
 
         if ((flags & UCG_PLAN_CONNECT_FLAG_ASK_INCAST) ||
-                (flags & UCG_PLAN_CONNECT_FLAG_ASK_BCAST)) {
+            (flags & UCG_PLAN_CONNECT_FLAG_ASK_BCAST)) {
             iface_ep_slot->peer_id = idx;
-            *ep_p = (uct_ep_h)iface_ep_slot->ep;
+            *ep_p = iface_ep_slot->ep = ucp_ep_get_smcoll_uct_ep(ucp_ep);
             ucs_assert(*ep_p != NULL);
             return UCS_OK;
         }
@@ -597,6 +598,7 @@ am_retry:
     if (ucp_proxy_ep_test(*ep_p)) {
         ucp_proxy_ep_t *proxy_ep = ucs_derived_of(*ep_p, ucp_proxy_ep_t);
         *ep_p = proxy_ep->uct_ep;
+        ucs_assert(*ep_p != NULL);
     }
 
     ucs_assert((*ep_p)->iface != NULL);

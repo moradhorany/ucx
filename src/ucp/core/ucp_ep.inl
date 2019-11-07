@@ -66,6 +66,11 @@ static inline uct_ep_h ucp_ep_get_tag_uct_ep(ucp_ep_h ep)
     return ep->uct_eps[ucp_ep_get_tag_lane(ep)];
 }
 
+static inline uct_ep_h ucp_ep_get_smcoll_uct_ep(ucp_ep_h ep)
+{
+    return ep->uct_eps[ucp_ep_get_smcoll_lane(ep)];
+}
+
 static inline ucp_rsc_index_t ucp_ep_get_rsc_index(ucp_ep_h ep, ucp_lane_index_t lane)
 {
     return ucp_ep_config(ep)->key.lanes[lane].rsc_index;
