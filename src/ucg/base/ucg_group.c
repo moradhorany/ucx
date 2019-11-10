@@ -579,7 +579,8 @@ ucs_status_t ucg_plan_connect(ucg_group_h group,
         if ((flags & UCG_PLAN_CONNECT_FLAG_ASK_INCAST) ||
             (flags & UCG_PLAN_CONNECT_FLAG_ASK_BCAST)) {
             iface_ep_slot->peer_id = idx;
-            *ep_p = iface_ep_slot->ep = ucp_ep_get_smcoll_uct_ep(ucp_ep);
+            *ep_p = ucp_ep_get_smcoll_uct_ep(ucp_ep);
+            iface_ep_slot->ep = (uct_mm_coll_ep_t*)*ep_p;
             ucs_assert(*ep_p != NULL);
             return UCS_OK;
         }
