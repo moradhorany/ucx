@@ -71,7 +71,6 @@ static inline ucs_status_t uct_mm_coll_iface_get_ep(uct_mm_coll_iface_t *iface,
     uct_mm_coll_peer_ep_t *iter = iface->eps;
     while (iter->ep && (iter->peer_id != peer_id)) {
         iter++;
-        ucs_assert(iter->peer_id != (iter-1)->peer_id);
     }
 
     *peer_ep = iter; /* If not found - return the next vacant slot to be used */
