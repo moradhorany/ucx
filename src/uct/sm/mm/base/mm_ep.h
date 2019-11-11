@@ -78,7 +78,4 @@ static inline int64_t uct_mm_remote_seg_compare(uct_mm_remote_seg_t *seg1, uct_m
 SGLIB_DEFINE_LIST_PROTOTYPES(uct_mm_remote_seg_t, uct_mm_remote_seg_compare, next)
 SGLIB_DEFINE_HASHED_CONTAINER_PROTOTYPES(uct_mm_remote_seg_t, UCT_MM_BASE_ADDRESS_HASH_SIZE, uct_mm_remote_seg_hash)
 
-ucs_status_t uct_mm_ep_get_remote_elem_ext(uct_mm_ep_t *ep, uint64_t head,
-                                           uct_mm_fifo_element_t **elem);
-
 #endif

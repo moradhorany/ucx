@@ -16,6 +16,7 @@ struct uct_mm_coll_ep {
     uct_base_ep_t super;
 
     uct_mm_ep_t  *tx;           /* For sending messages to the root */
+    uint64_t      tx_index;     /* TX actual reading location */
     uint64_t      tx_peer_mask; /* The mask of the remote peer */
 
     uct_mm_ep_t  *rx;           /* For receiving messages, broadcasted by a peer */

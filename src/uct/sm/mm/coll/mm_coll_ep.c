@@ -27,17 +27,12 @@ uct_mm_coll_ep_am_common_send(unsigned is_short, uct_mm_coll_ep_t *coll_ep,
                               uct_locked_pack_callback_t locked_pack_cb, void *arg,
                               uct_pack_callback_t pack_cb, unsigned flags)
 {
-    uct_mm_ep_t *ep = coll_ep->tx;
-    uct_mm_coll_fifo_element_t *elem;
-    uct_mm_coll_peer_mask_t pending;
-    ucs_status_t status;
-    void *base_address;
-    uint64_t head;
-
+    /* Sanity checks */
     UCT_CHECK_AM_ID(am_id);
 
-retry:
-    head = ep->fifo_ctl->head;
+    /* Grab the next cell I haven't yet written to */
+    uint64_t head = ++coll_ep->tx_index;
+    uct_mm_ep_t *ep = coll_ep->tx;
 
     /* check if there is room in the remote process's receive FIFO to write */
     if (!UCT_MM_EP_IS_ABLE_TO_SEND(head, ep->cached_tail, iface->super.config.fifo_size)) {
@@ -57,14 +52,12 @@ retry:
     }
 
     /* Obtain the next element this process should access */
-    status = uct_mm_ep_get_remote_elem_ext(ep, head, (uct_mm_fifo_element_t**)&elem);
-    if (status != UCS_OK) {
-        ucs_assert(status == UCS_ERR_NO_RESOURCE);
-        ucs_trace_poll("couldn't get an available FIFO element. retrying");
-        goto retry;
-    }
+    uint64_t elem_index = head & iface->super.fifo_mask;
+    uct_mm_coll_fifo_element_t *elem = (uct_mm_coll_fifo_element_t*)
+            UCT_MM_IFACE_GET_FIFO_ELEM(&iface->super, ep->fifo, elem_index);
+    ucs_assert((elem->pending == 0) || (elem->pending & iface->my_mask));
 
-
+    void *base_address;
     if (is_short) {
         base_address = (void*)(elem + 1);
     } else {
@@ -74,6 +67,7 @@ retry:
                 elem->super.desc_offset;
     }
 
+    uct_mm_coll_peer_mask_t pending;
     if (ucs_unlikely(elem->pending == 0)) {
         ucs_spin_lock_alone(&elem->lock);
 
@@ -128,6 +122,13 @@ done_reducing:
         } else {
             elem->super.flags &= ~UCT_MM_FIFO_ELEM_FLAG_OWNER;
         }
+
+        /* Update the remote head element */
+        ep->fifo_ctl->head = coll_ep->tx_index;
+        // TODO: why mm_ep.c needs ucs_atomic_cswap64() and this doesn't?
+        ucs_writeback_cache(ucs_unaligned_ptr(&ep->fifo_ctl->head),
+                            ucs_unaligned_ptr(&ep->fifo_ctl->head + 1));
+
     }
 
     if (is_short) {
@@ -219,7 +220,8 @@ static UCS_CLASS_INIT_FUNC(uct_mm_coll_ep_t, const uct_ep_params_t *params)
     iface_ep_slot->ep = self;
 
     self->tx_peer_mask = UCS_BIT(addr->coll_id);
-    self->rx_index = 0;
+    self->tx_index     = (uint64_t)-1;
+    self->rx_index     = 0;
 
     ucs_debug("mm_coll: ep connected: %p, id: %u", self, addr->coll_id);
 
