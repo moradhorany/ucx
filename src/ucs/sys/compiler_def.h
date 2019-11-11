@@ -65,6 +65,13 @@
 #  define UCS_V_INITIALIZED(_v)  ((void)0)
 #endif
 
+/*
+ * Cover for ISO C and similar cases.
+ */
+#ifndef __FUNCTION__
+#define __FUNCTION__ __func__
+#endif
+
 /* The i-th bit */
 #define UCS_BIT(i)               (1ul << (i))
 
