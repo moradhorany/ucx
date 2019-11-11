@@ -199,11 +199,6 @@ static inline ucs_status_t uct_mm_ep_get_remote_elem(uct_mm_ep_t *ep, uint64_t h
                         ucs_unaligned_ptr(&ep->fifo_ctl->head + 1));
     return UCS_OK;
 }
-ucs_status_t uct_mm_ep_get_remote_elem_ext(uct_mm_ep_t *ep, uint64_t head,
-                                           uct_mm_fifo_element_t **elem)
-{
-    return uct_mm_ep_get_remote_elem(ep, head, elem);
-}
 
 static inline void uct_mm_ep_update_cached_tail(uct_mm_ep_t *ep)
 {
