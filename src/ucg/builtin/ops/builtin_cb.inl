@@ -647,10 +647,21 @@ int ucg_builtin_atomic_reduce_partial(ucg_builtin_request_t *req,
     ucg_collective_params_t *params = &req->op->super.params;
     ucs_assert(lock != NULL);
 
+    /* Check for barriers */
+    if (ucs_unlikely(params->send.dt_len == 0)) {
+        return 0;
+    }
+
     ucs_spin_lock(lock);
     ucg_builtin_mpi_reduce(length == UCG_FRAGMENT_SIZE, params->recv.op_ext, src,
                            dst, length / params->send.dt_len, params->send.dt_ext);
     ucs_spin_unlock(lock);
 
     return length; // TODO: make ucg_builtin_mpi_reduce return the actual size
+}
+
+int ucg_builtin_barrier(ucg_builtin_request_t *req,
+        uint64_t offset, void *src, void *dst, size_t length, ucs_spinlock_t *lock)
+{
+    return 0;
 }
