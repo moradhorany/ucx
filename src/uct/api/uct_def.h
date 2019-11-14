@@ -61,7 +61,8 @@ enum uct_am_trace_type {
  *
  */
 enum uct_cb_param_flags {
-    UCT_CB_PARAM_FLAG_DESC = UCS_BIT(0)
+    UCT_CB_PARAM_FLAG_DESC  = UCS_BIT(0),
+    UCT_CB_PARAM_FLAG_BATCH = UCS_BIT(1)
 };
 
 /**

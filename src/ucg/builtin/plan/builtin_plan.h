@@ -47,6 +47,7 @@ typedef struct ucg_builtin_plan_phase {
     ucg_step_idx_t                    step_index;    /* determines step index */
     enum ucg_builtin_plan_method_type method;        /* how to apply this map */
     uint16_t                          flags;         /* @ref enum ucg_builtin_plan_flags */
+    uint16_t                          sm_cnt;        /* shared-memory-specific counter */
 
     size_t                            max_short_one; /* max single short message */
     size_t                            max_short_max; /* max length to use short */
@@ -80,6 +81,7 @@ typedef struct ucg_builtin_plan {
 } ucg_builtin_plan_t;
 
 #define UCG_BUILTIN_CONNECT_SINGLE_EP ((unsigned)-1)
+
 ucs_status_t ucg_builtin_connect(ucg_builtin_group_ctx_t *ctx,
         ucg_group_member_index_t idx, ucg_builtin_plan_phase_t *phase,
         unsigned phase_ep_index, unsigned sm_coll_flags);
@@ -91,18 +93,22 @@ typedef struct ucg_builtin_tree_config {
 #define UCG_BUILTIN_TREE_MAX_RADIX (32)
     unsigned sock_thresh;
 } ucg_builtin_tree_config_t;
+
 extern ucs_config_field_t ucg_builtin_tree_config_table[];
+
 ucs_status_t ucg_builtin_tree_create(ucg_builtin_group_ctx_t *ctx,
         enum ucg_builtin_plan_topology_type plan_topo_type,
         const ucg_builtin_config_t *config,
         const ucg_group_params_t *group_params,
         const ucg_collective_type_t *coll_type,
         ucg_builtin_plan_t **plan_p);
+
 ucs_status_t ucg_builtin_topo_tree_set_root(ucg_group_member_index_t root,
         ucg_group_member_index_t my_index,
         ucg_builtin_plan_t *plan,
         ucg_builtin_plan_phase_t **first_phase_p,
         unsigned *phase_count_p);
+
 typedef struct ucg_builtin_tree_params {
     enum ucg_builtin_plan_topology_type topo_type;
     const ucg_group_params_t           *group_params;
@@ -111,12 +117,14 @@ typedef struct ucg_builtin_tree_params {
     ucg_group_member_index_t            root;
     ucg_builtin_group_ctx_t            *ctx;
 } ucg_builtin_tree_params_t;
+
 typedef struct ucg_builtin_topo_tree_root_phase {
     ucs_list_link_t          list;
     ucg_group_member_index_t root;
     ucg_step_idx_t           phs_cnt;
     ucg_builtin_plan_phase_t phss[UCG_BUILTIN_TREE_MAX_RADIX];
 } ucg_builtin_topo_tree_root_phase_t;
+
 ucs_status_t ucg_builtin_tree_connect(ucg_builtin_plan_t *tree,
         ucg_builtin_topo_tree_root_phase_t *root,
         const ucg_builtin_tree_params_t *params,
@@ -125,6 +133,7 @@ ucs_status_t ucg_builtin_tree_connect(ucg_builtin_plan_t *tree,
         ucg_group_member_index_t *net_up,    unsigned net_up_cnt,
         ucg_group_member_index_t *net_down,  unsigned net_down_cnt,
         ucg_group_member_index_t *host_down, unsigned host_down_cnt);
+
 ucs_status_t ucg_builtin_tree_add_intra(const ucg_builtin_tree_params_t *params,
         ucg_group_member_index_t *my_idx,
         unsigned *ppn,
@@ -137,7 +146,9 @@ ucs_status_t ucg_builtin_tree_add_intra(const ucg_builtin_tree_params_t *params,
 typedef struct ucg_builtin_recursive_config {
     unsigned factor;
 } ucg_builtin_recursive_config_t;
+
 extern ucs_config_field_t ucg_builtin_recursive_config_table[];
+
 ucs_status_t ucg_builtin_recursive_create(ucg_builtin_group_ctx_t *ctx,
         enum ucg_builtin_plan_topology_type plan_topo_type,
         const ucg_builtin_config_t *config,
@@ -148,7 +159,9 @@ ucs_status_t ucg_builtin_recursive_create(ucg_builtin_group_ctx_t *ctx,
 typedef struct ucg_builtin_neighbor_config {
     unsigned dimension;
 } ucg_builtin_neighbor_config_t;
+
 extern ucs_config_field_t ucg_builtin_neighbor_config_table[];
+
 ucs_status_t ucg_topo_neighbor_create(ucg_builtin_group_ctx_t *ctx,
         enum ucg_builtin_plan_topology_type plan_topo_type,
         const ucg_builtin_config_t *config,
@@ -157,7 +170,7 @@ ucs_status_t ucg_topo_neighbor_create(ucg_builtin_group_ctx_t *ctx,
         ucg_builtin_plan_t **plan_p);
 
 struct ucg_builtin_config {
-    ucg_plan_config_t    super;
+    ucg_plan_config_t              super;
 
     ucg_builtin_tree_config_t      tree;
     ucg_builtin_recursive_config_t recursive;

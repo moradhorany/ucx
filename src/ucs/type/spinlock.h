@@ -8,8 +8,13 @@
 #define UCS_SPINLOCK_H
 
 #include <ucs/type/status.h>
-#include <ucs/debug/assert.h>
 #include <pthread.h>
+
+#ifdef HAVE_CONFIG_H
+#if ENABLE_ASSERT
+#include <ucs/debug/assert.h>
+#endif
+#endif
 
 BEGIN_C_DECLS
 

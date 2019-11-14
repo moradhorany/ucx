@@ -22,7 +22,8 @@ noinst_HEADERS = \
 
 libucg_builtin_la_SOURCES = \
 	builtin.c \
-	ops/builtin_ops.cpp \
+	ops/builtin_data.cpp \
+	ops/builtin_control.c \
 	plan/builtin_tree.c \
 	plan/builtin_neighbor.c \
 	plan/builtin_recursive.c

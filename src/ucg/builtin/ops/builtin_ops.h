@@ -163,11 +163,13 @@ ucs_status_t ucg_builtin_step_create (ucg_builtin_plan_phase_t *phase,
 ucs_status_t ucg_builtin_step_execute(ucg_builtin_request_t *req,
                                       ucg_request_t **user_req);
 ucs_status_t ucg_builtin_step_select_callbacks(ucg_builtin_plan_phase_t *phase,
-        ucg_builtin_comp_recv_cb_t *recv_cb, int nonzero_length, int flags,
-        int is_temporary_buffer);
+                                               ucg_builtin_comp_recv_cb_t *recv_cb,
+                                               int nonzero_length, int flags);
 ucs_status_t ucg_builtin_op_select_callback(ucg_builtin_plan_t *plan,
-        ucg_builtin_op_init_cb_t *init_cb);
-ucs_status_t ucg_builtin_op_consider_optimization(ucg_builtin_op_t *op);
+                                            ucg_builtin_op_init_cb_t *init_cb);
+ucs_status_t ucg_builtin_step_zcopy_prep(ucg_builtin_op_step_t *step);
+ucs_status_t ucg_builtin_op_consider_optimization(ucg_builtin_op_t *op,
+                                                  ucg_builtin_config_t *config);
 
 void         ucg_builtin_op_initialize();
 ucs_status_t ucg_builtin_op_create (ucg_plan_t *plan,

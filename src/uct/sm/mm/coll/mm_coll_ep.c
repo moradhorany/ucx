@@ -15,13 +15,32 @@ static inline void uct_mm_coll_ep_update_cached_tail(uct_mm_ep_t *ep)
     ep->cached_tail = ep->fifo_ctl->tail;
 }
 
+static size_t uct_mm_coll_ep_am_common_send_action(ucs_spinlock_t *lock,
+        void *base_address, size_t length, uint64_t header, const void *payload,
+        uct_locked_pack_callback_t locked_pack_cb, void *arg,
+        uct_pack_callback_t pack_cb, unsigned flags)
+{
+    if (payload != NULL) {
+        *(uint64_t*)base_address = header;
+        memcpy((char*)base_address + sizeof(header), payload, length);
+        return length + sizeof(header);
+    }
+
+    if (pack_cb != NULL) {
+        return pack_cb(base_address, arg);
+    }
+
+    return locked_pack_cb(base_address, lock, arg);
+}
+
 /* A common mm active message sending function.
  * The first parameter indicates the origin of the call.
  * is_short_add = 1 - perform AM short sending, assuming "+" for incast
  * is_short_add = 0 - perform AM bcopy sending
  */
 static UCS_F_ALWAYS_INLINE ssize_t
-uct_mm_coll_ep_am_common_send(unsigned is_short, uct_mm_coll_ep_t *coll_ep,
+uct_mm_coll_ep_am_common_send(unsigned is_short, unsigned is_batch,
+                              uct_mm_coll_ep_t *coll_ep,
                               uct_mm_coll_iface_t *iface, uint8_t am_id,
                               size_t length, uint64_t header, const void *payload,
                               uct_locked_pack_callback_t locked_pack_cb, void *arg,
@@ -57,48 +76,57 @@ uct_mm_coll_ep_am_common_send(unsigned is_short, uct_mm_coll_ep_t *coll_ep,
             UCT_MM_IFACE_GET_FIFO_ELEM(&iface->super, ep->fifo, elem_index);
     ucs_assert((elem->pending == 0) || (elem->pending & iface->my_mask));
 
+    /* Check if this is the first message in this collective operation */
     void *base_address;
-    if (is_short) {
-        base_address = (void*)(elem + 1);
-    } else {
-        /* write to the remote descriptor */
-        /* get the base_address: local ptr to remote memory chunk after attaching to it */
-        base_address = uct_mm_ep_attach_remote_seg(ep, &iface->super, &elem->super) +
-                elem->super.desc_offset;
-    }
-
     uct_mm_coll_peer_mask_t pending;
     if (ucs_unlikely(elem->pending == 0)) {
-        ucs_spin_lock_alone(&elem->lock);
+        int is_bcast   = (coll_ep == iface->eps[0].ep);
+        int needs_lock = ((!is_batch || !is_short) && !is_bcast);
+
+        /* Check for BCOPY or SLOCK or BLOCK to require mutual exclusion */
+        if (needs_lock) {
+            ucs_spin_lock_alone(&elem->lock);
+        }
 
         if (ucs_unlikely(elem->pending == 0)) {
-            /* First element - lock, and indicate the memory requires overwriting */
-            if (payload != NULL) {
-                *(uint64_t*)(elem + 1) = header;
-                memcpy((void*) (elem + 1) + sizeof(header), payload, length);
-                length += sizeof(header);
-            } else if (pack_cb != NULL) {
-                length = pack_cb(base_address, arg);
-            } else {
-                length = locked_pack_cb(base_address, NULL, arg);
+            /* Calculate the destination address (allocate for BCOPY / BLOCK) */
+            base_address = is_short ? (void*)(elem + 1) : elem->super.desc_offset +
+                    uct_mm_ep_attach_remote_seg(ep, &iface->super, &elem->super);
+            if (is_batch) {
+                base_address = (char*)base_address + (length * coll_ep->my_offset);
             }
 
+            /* First element - lock, and indicate the memory requires overwriting */
+            length = uct_mm_coll_ep_am_common_send_action(NULL, base_address,
+                    length, header, payload, locked_pack_cb, arg, pack_cb, flags);
+
             pending = elem->pending = iface->peer_mask;
-            ucs_spin_unlock_alone(&elem->lock);
+            if (needs_lock) {
+                ucs_spin_unlock_alone(&elem->lock);
+            }
             goto done_reducing;
         }
 
-        ucs_spin_unlock_alone(&elem->lock);
+        /* Same check for unlocking... */
+        if (needs_lock) {
+            ucs_spin_unlock_alone(&elem->lock);
+        }
     }
 
-    ucs_assert(payload == NULL); /* In ep_am_short(bcast) I'm always first */
-    ucs_assert(pack_cb == NULL); /* In ep_am_bcopy(bcast) I'm always first */
-    ucs_assert(elem->pending & iface->my_mask); /* I'm still pending */
+    /* Calculate destination address for reduction */
+    base_address = is_short ? (void*)(elem + 1) :
+            (elem->super.desc_chunk_base_addr + elem->super.desc_offset);
+    if (is_batch) {
+        base_address = (char*)base_address + (iface->my_coll_id *
+                ucs_align_up(length, UCS_SYS_CACHE_LINE_SIZE));
+    }
 
     /* Reduce into the buffer */
-    length = locked_pack_cb(base_address, &elem->lock, arg);
+    length = uct_mm_coll_ep_am_common_send_action(is_batch ? NULL : &elem->lock,
+            base_address, length, header, payload, locked_pack_cb, arg, pack_cb, flags);
 
     /* Mark myself as finished regarding this element */
+    ucs_assert(elem->pending & iface->my_mask); /* I'm still pending (before) */
     pending = ucs_atomic_fand64(&elem->pending, ~iface->my_mask) & ~iface->my_mask;
 
 done_reducing:
@@ -110,6 +138,12 @@ done_reducing:
         elem->super.flags  = is_short ?
                 elem->super.flags |  UCT_MM_FIFO_ELEM_FLAG_INLINE:
                 elem->super.flags & ~UCT_MM_FIFO_ELEM_FLAG_INLINE;
+
+        if (is_batch) {
+            elem->super.flags |= UCT_MM_FIFO_ELEM_FLAG_BATCH;
+        } else {
+            elem->super.flags &= ~UCT_MM_FIFO_ELEM_FLAG_BATCH;
+        }
 
         /* memory barrier - make sure that the memory is flushed before setting the
          * 'writing is complete' flag which the reader checks */
@@ -128,7 +162,6 @@ done_reducing:
         // TODO: why mm_ep.c needs ucs_atomic_cswap64() and this doesn't?
         ucs_writeback_cache(ucs_unaligned_ptr(&ep->fifo_ctl->head),
                             ucs_unaligned_ptr(&ep->fifo_ctl->head + 1));
-
     }
 
     if (is_short) {
@@ -155,7 +188,7 @@ ucs_status_t uct_mm_coll_ep_am_short(uct_ep_h tl_ep, uint8_t id, uint64_t header
     UCT_CHECK_LENGTH(length + sizeof(header), 0, iface->super.config.fifo_elem_size -
                      sizeof(uct_mm_coll_fifo_element_t), "am_short");
 
-    return uct_mm_coll_ep_am_common_send(UCT_MM_AM_SHORT, ep, iface, id, length,
+    return uct_mm_coll_ep_am_common_send(1, 1, ep, iface, id, length,
                                          header, payload, NULL, NULL, NULL, 0);
 }
 
@@ -166,7 +199,7 @@ ssize_t uct_mm_coll_ep_am_bcopy(uct_ep_h tl_ep, uint8_t id,
     uct_mm_coll_iface_t *iface = ucs_derived_of(tl_ep->iface, uct_mm_coll_iface_t);
     uct_mm_coll_ep_t *ep = (uct_mm_coll_ep_t*)tl_ep;
 
-    return uct_mm_coll_ep_am_common_send(UCT_MM_AM_BCOPY, ep, iface, id, 0, 0,
+    return uct_mm_coll_ep_am_common_send(0, 1, ep, iface, id, 0, 0,
                                          NULL, NULL, arg, pack_cb, flags);
 }
 ssize_t uct_mm_coll_ep_am_slock(uct_ep_h tl_ep, uint8_t id,
@@ -176,7 +209,7 @@ ssize_t uct_mm_coll_ep_am_slock(uct_ep_h tl_ep, uint8_t id,
     uct_mm_coll_iface_t *iface = ucs_derived_of(tl_ep->iface, uct_mm_coll_iface_t);
     uct_mm_coll_ep_t *ep = (uct_mm_coll_ep_t*)tl_ep;
 
-    return uct_mm_coll_ep_am_common_send(UCT_MM_AM_SHORT, ep, iface, id, 0, 0,
+    return uct_mm_coll_ep_am_common_send(1, 0, ep, iface, id, 0, 0,
                                          NULL, pack_cb, arg, NULL, flags);
 }
 
@@ -187,7 +220,7 @@ ssize_t uct_mm_coll_ep_am_block(uct_ep_h tl_ep, uint8_t id,
     uct_mm_coll_iface_t *iface = ucs_derived_of(tl_ep->iface, uct_mm_coll_iface_t);
     uct_mm_coll_ep_t *ep = (uct_mm_coll_ep_t*)tl_ep;
 
-    return uct_mm_coll_ep_am_common_send(UCT_MM_AM_BCOPY, ep, iface, id, 0, 0,
+    return uct_mm_coll_ep_am_common_send(0, 0, ep, iface, id, 0, 0,
                                          NULL, pack_cb, arg, NULL, flags);
 }
 
@@ -210,6 +243,7 @@ static UCS_CLASS_INIT_FUNC(uct_mm_coll_ep_t, const uct_ep_params_t *params)
     status = UCS_CLASS_NEW(uct_mm_ep_t, &self->rx, &per_ep_params);
     if (status != UCS_OK) {
         UCS_CLASS_DELETE(uct_mm_ep_t, &self->tx);
+        ucs_class_free(self->tx);
         return status;
     }
 
@@ -219,6 +253,7 @@ static UCS_CLASS_INIT_FUNC(uct_mm_coll_ep_t, const uct_ep_params_t *params)
     ucs_assert(status == UCS_ERR_NO_ELEM);
     iface_ep_slot->ep = self;
 
+    self->my_offset    = iface->my_coll_id - (uint32_t)(addr->coll_id < iface->my_coll_id);
     self->tx_peer_mask = UCS_BIT(addr->coll_id);
     self->tx_index     = (uint64_t)-1;
     self->rx_index     = 0;
@@ -230,9 +265,13 @@ static UCS_CLASS_INIT_FUNC(uct_mm_coll_ep_t, const uct_ep_params_t *params)
 
 static UCS_CLASS_CLEANUP_FUNC(uct_mm_coll_ep_t)
 {
+    // TODO: UCS_CLASS_CLEANUP(uct_mm_ep_t, &self->rx);
+    // TODO: UCS_CLASS_CLEANUP(uct_mm_ep_t, &self->tx);
+    ucs_class_free(self->rx);
+    ucs_class_free(self->tx);
 }
 
-UCS_CLASS_DEFINE(uct_mm_coll_ep_t, uct_mm_ep_t)
+UCS_CLASS_DEFINE(uct_mm_coll_ep_t, uct_base_ep_t)
 UCS_CLASS_DEFINE_NEW_FUNC(uct_mm_coll_ep_t, uct_ep_t, const uct_ep_params_t *);
 UCS_CLASS_DEFINE_DELETE_FUNC(uct_mm_coll_ep_t, uct_ep_t);
 
@@ -253,7 +292,8 @@ static inline void uct_mm_coll_progress_fifo_tail(uct_mm_coll_iface_t *iface,
  * ep == NULL : Check for incoming messages on
  */
 static inline unsigned uct_mm_coll_iface_poll_fifo(uct_mm_coll_iface_t *iface,
-                                                   uct_mm_coll_ep_t *coll_ep)
+                                                   uct_mm_coll_ep_t *coll_ep,
+                                                   int is_incast)
 {
     uint64_t read_index_loc, read_index;
     uct_mm_coll_fifo_element_t* read_index_elem;
@@ -283,7 +323,7 @@ static inline unsigned uct_mm_coll_iface_poll_fifo(uct_mm_coll_iface_t *iface,
         /* Make sure it's not a message I broadcasted... */
         if (read_index_elem->pending & iface->my_mask) {
             status = uct_mm_iface_process_recv_ext(&iface->super,
-                    &read_index_elem->super, read_index_elem + 1);
+                    &read_index_elem->super, read_index_elem + 1, 0);
             if (status != UCS_OK) {
                 /* the last_recv_desc is in use. get a new descriptor for it */
                 UCT_TL_IFACE_GET_RX_DESC(&iface->super.super,
@@ -314,11 +354,13 @@ unsigned uct_mm_coll_iface_progress(void *arg)
     uct_mm_coll_iface_t *iface = arg;
     uct_mm_coll_peer_ep_t *iter = iface->eps;
     uct_mm_coll_ep_t *next_ep = iter->ep;
+    int is_incast = 0;
 
     do { /* One (loop-back) endpoint is always present */
-        count += uct_mm_coll_iface_poll_fifo(iface, next_ep);
+        count += uct_mm_coll_iface_poll_fifo(iface, next_ep, is_incast);
         iter++;
         next_ep = iter->ep;
+        is_incast = 1;
     } while (next_ep);
 
     /* progress the pending sends (if there are any) */
