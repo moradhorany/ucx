@@ -183,6 +183,6 @@ UCS_CLASS_DECLARE(uct_mm_iface_t, uct_md_h, uct_worker_h,
 
 ucs_status_t uct_mm_iface_process_recv_ext(uct_mm_iface_t *iface,
                                            uct_mm_fifo_element_t* elem,
-                                           void *data);
+                                           void *data, int is_batch_disabled);
 
 #endif

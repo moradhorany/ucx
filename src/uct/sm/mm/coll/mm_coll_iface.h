@@ -28,7 +28,7 @@ typedef struct uct_mm_coll_fifo_element {
     uct_mm_fifo_element_t    super;
     ucs_spinlock_t           lock;
     volatile uct_mm_coll_peer_mask_t pending;
-} uct_mm_coll_fifo_element_t;
+} UCS_S_PACKED uct_mm_coll_fifo_element_t;
 
 typedef struct uct_mm_coll_ep uct_mm_coll_ep_t;
 
@@ -40,20 +40,16 @@ typedef struct uct_mm_coll_peer_ep {
 } uct_mm_coll_peer_ep_t;
 
 typedef struct uct_mm_coll_iface {
-    uct_mm_iface_t           super; /* The "recv_fifo" is used for many-to-one */
+    uct_mm_iface_t           super; /* The "recv FIFO" is used for many-to-one */
                                     /* collectives, such as reduce or gather */
+    uct_mm_iface_t           bcast; /* The "bcast FIFO" is used for one-to-many */
+                                    /* collectives, such as bcast or scatter */
 
-    uint32_t my_coll_id;
+    uint32_t                my_coll_id;
+    uint32_t                sm_proc_cnt;
     uct_mm_coll_peer_mask_t my_mask;
     uct_mm_coll_peer_mask_t peer_mask;
     uct_md_attr_t           md_attr;
-
-    /* Similarly to @ref uct_mm_iface_t , this hosts the FIFO for SM broadcast */
-    uct_mm_id_t             bcast_fifo_mm_id;
-    void                   *bcast_shared_mem;
-    uct_mm_fifo_ctl_t      *bcast_fifo_ctl;
-    void                   *bcast_fifo_elements;
-    uint64_t                bcast_index;
 
     /* Array of endpoints to different peers, ordered by connection time */
     uct_mm_coll_peer_ep_t  *eps;

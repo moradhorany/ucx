@@ -448,6 +448,8 @@ static ucs_status_t ucg_worker_groups_init(ucp_worker_h worker,
     gctx->next_id             = 0;
     gctx->iface_cnt           = 0;
     gctx->total_planner_sizes = group_ctx_offset;
+    gctx->num_local_peers     = worker->context->config.num_local_peers;
+    gctx->my_local_peer_idx   = worker->context->config.my_local_peer_idx;
     kh_init_inplace(ucg_group_ep, &gctx->eps);
     ucs_list_head_init(&gctx->groups_head);
     return UCS_OK;
@@ -499,8 +501,8 @@ ucs_status_t ucg_init(const ucg_params_t *params,
     return status;
 }
 
-ucs_status_t ucg_plan_connect(ucg_group_h group,
-        ucg_group_member_index_t idx, enum ucg_plan_connect_flags flags,
+ucs_status_t ucg_plan_connect(ucg_group_h group, ucg_group_member_index_t idx,
+        enum ucg_plan_connect_flags flags, uint16_t *sm_cnt,
         uct_ep_h *ep_p, const uct_iface_attr_t **ep_attr_p,
         uct_md_h *md_p, const uct_md_attr_t    **md_attr_p)
 {
@@ -508,7 +510,7 @@ ucs_status_t ucg_plan_connect(ucg_group_h group,
     ucs_status_t status;
     size_t remote_addr_len;
     ucp_address_t *remote_addr = NULL;
-    uct_mm_coll_peer_ep_t *iface_ep_slot;
+    uct_mm_coll_peer_ep_t *iface_ep_slot = NULL;
     ucg_groups_t *gctx = UCG_WORKER_TO_GROUPS_CTX(group->worker);
 
     if ((flags & UCG_PLAN_CONNECT_FLAG_ASK_INCAST) ||
@@ -521,6 +523,7 @@ ucs_status_t ucg_plan_connect(ucg_group_h group,
         UCG_GROUP_PROGRESS_ADD(uct_iface, group);
         UCG_GROUP_PROGRESS_ADD(uct_iface, gctx);
 
+        *sm_cnt    = iface->sm_proc_cnt;
         *ep_attr_p = ucp_worker_iface_get_attr(group->worker, gctx->mm_coll_tl_id);
         *md_p      = iface->super.super.md;
         *md_attr_p = &iface->md_attr;
@@ -538,6 +541,8 @@ ucs_status_t ucg_plan_connect(ucg_group_h group,
             return UCS_OK;
         }
         ucs_assert(status == UCS_ERR_NO_ELEM);
+    } else {
+        *sm_cnt = 0;
     }
 
     /* Look-up the UCP endpoint based on the index */
@@ -578,9 +583,9 @@ ucs_status_t ucg_plan_connect(ucg_group_h group,
 
         if ((flags & UCG_PLAN_CONNECT_FLAG_ASK_INCAST) ||
             (flags & UCG_PLAN_CONNECT_FLAG_ASK_BCAST)) {
-            iface_ep_slot->peer_id = idx;
             *ep_p = ucp_ep_get_smcoll_uct_ep(ucp_ep);
             iface_ep_slot->ep = (uct_mm_coll_ep_t*)*ep_p;
+            iface_ep_slot->peer_id = idx;
             ucs_assert(*ep_p != NULL);
             return UCS_OK;
         }

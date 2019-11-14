@@ -21,6 +21,8 @@ struct uct_mm_coll_ep {
 
     uct_mm_ep_t  *rx;           /* For receiving messages, broadcasted by a peer */
     uint64_t      rx_index;     /* RX actual reading location */
+
+    uint32_t      my_offset;    /* My offset, for batched writes */
 };
 
 UCS_CLASS_DECLARE_NEW_FUNC(uct_mm_coll_ep_t, uct_ep_t, const uct_ep_params_t*);

@@ -50,9 +50,14 @@ static inline ucs_status_t ucg_builtin_tree_connect_phase(ucg_builtin_plan_phase
                                          "tree topology indexes");
 #endif
 
+    /*
+     * Currently BCAST is not working so it's limited to INCAST...
+     */
+    sm_coll_flags &= UCG_PLAN_CONNECT_FLAG_ASK_INCAST; // TODO: remove!
+
     if ((peer_cnt == 1) || sm_coll_flags) {
         ucg_group_member_index_t peer = peers[0];
-        if (sm_coll_flags) {
+        if (sm_coll_flags & UCG_PLAN_CONNECT_FLAG_ASK_INCAST) {
             phase->flags |= UCG_PLAN_FLAG_NEEDS_LOCKING;
 
             /* For some methods, e.g. REDUCE_TERMINAL, the peer is the message

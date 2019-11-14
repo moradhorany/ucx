@@ -75,7 +75,7 @@ ucg_builtin_choose_type(enum ucg_collective_modifiers flags,
     }
 
     if (flags & UCG_GROUP_COLLECTIVE_MODIFIER_AGGREGATE) {
-        if (__builtin_popcountl(group_size) > 1) {
+        if (ucs_popcount(group_size) > 1) {
             /* Not a power of two */
             return UCG_PLAN_TREE_FANIN_FANOUT;
         }
@@ -89,6 +89,7 @@ UCS_PROFILE_FUNC(ucs_status_t, ucg_builtin_am_handler,
                  (arg, data, length, am_flags),
                  void *arg, void *data, size_t length, unsigned am_flags)
 {
+    int is_step_complete;
     ucg_builtin_header_t* header  = data;
     ucg_builtin_ctx_t **ctx       = UCG_WORKER_TO_COMPONENT_CTX(ucg_builtin_component, arg);
     ucg_builtin_comp_slot_t *slot = &(*ctx)->slots[header->group_id]
@@ -101,22 +102,38 @@ UCS_PROFILE_FUNC(ucs_status_t, ucg_builtin_am_handler,
                (slot->step_idx <= header->step_idx));
     if (ucs_likely(slot->cb && (header->local_id == slot->local_id))) {
         /* Make sure the packet indeed belongs to the collective currently on */
-        ucs_assert((header->remote_offset + length -
-                sizeof(ucg_builtin_header_t)) <= slot->req.step->buffer_length);
-        ucs_assert((length == sizeof(ucg_builtin_header_t)) ||
-                   (length - sizeof(ucg_builtin_header_t) == slot->req.step->buffer_length) ||
-                   ((length - sizeof(ucg_builtin_header_t) <= slot->req.step->fragment_length) &&
+        length -= sizeof(ucg_builtin_header_t);
+        am_flags &= UCT_CB_PARAM_FLAG_BATCH;
+        ucs_assert((header->remote_offset + length) <=
+                   slot->req.step->buffer_length);
+        ucs_assert((length == 0) ||
+                   (length == slot->req.step->buffer_length) ||
+                   ((length <= slot->req.step->fragment_length) &&
                     (slot->req.step->fragments > 1)));
+
 
         ucs_trace_req("ucg_builtin_am_handler CB: coll_id %u step_idx %u cb %p pending %u",
                 header->coll_id, header->step_idx, slot->cb, slot->req.pending);
 
         /* The packet arrived "on time" - process it */
-        UCS_PROFILE_CODE("ucg_builtin_am_handler_cb") {
-            (void) slot->cb(&slot->req, header->remote_offset,
-                            data + sizeof(ucg_builtin_header_t),
-                            length - sizeof(ucg_builtin_header_t));
-        }
+        do {
+            /* Unless in batch mode - this runs only once */
+            UCS_PROFILE_CODE("ucg_builtin_am_handler_cb") {
+                is_step_complete = slot->cb(&slot->req, header->remote_offset,
+                                            header + 1, length);
+            }
+
+            if (ucs_likely(is_step_complete || !am_flags)) {
+                break;
+            }
+
+            /* Assume all the children are in this one message */
+            header = (ucg_builtin_header_t*)((uint8_t*)header +
+                    ucs_align_up(length + sizeof(*header), UCS_SYS_CACHE_LINE_SIZE));
+            ucs_assert(((ucg_builtin_header_t*)data)->local_id == header->local_id);
+            ucs_assert(((ucg_builtin_header_t*)data)->group_id == header->group_id);
+        } while (1);
+
         return UCS_OK;
     }
 
@@ -498,7 +515,7 @@ ucs_status_t ucg_builtin_connect(ucg_builtin_group_ctx_t *ctx,
 {
     uct_ep_h ep;
     ucs_status_t status = ucg_plan_connect(ctx->group, idx, sm_coll_flags,
-            &ep, &phase->ep_attr, &phase->md, &phase->md_attr);
+            &phase->sm_cnt, &ep, &phase->ep_attr, &phase->md, &phase->md_attr);
     if (ucs_unlikely(status != UCS_OK)) {
         return status;
     }

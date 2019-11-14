@@ -13,6 +13,11 @@
 #include "mm_coll_iface.h"
 #include "mm_coll_ep.h"
 
+#define UCT_MM_COLL_IFACE_GET_FIFO_ELEM(_iface, _fifo , _index) \
+    ucs_container_of(UCT_MM_IFACE_GET_FIFO_ELEM(&(_iface)->super, \
+            (_fifo)->recv_fifo_elements, _index), \
+            uct_mm_coll_fifo_element_t, super)
+
 extern ucs_config_field_t uct_mm_iface_config_table[];
 
 static ucs_config_field_t uct_mm_coll_iface_config_table[] = {
@@ -31,8 +36,8 @@ static ucs_status_t uct_mm_coll_iface_get_address(uct_iface_t *tl_iface,
 
     iface_addr->rx.id    = iface->super.fifo_mm_id;
     iface_addr->rx.vaddr = (uintptr_t)iface->super.shared_mem;
-    iface_addr->tx.id    = iface->bcast_fifo_mm_id;
-    iface_addr->tx.vaddr = (uintptr_t)iface->bcast_shared_mem;
+    iface_addr->tx.id    = iface->bcast.fifo_mm_id;
+    iface_addr->tx.vaddr = (uintptr_t)iface->bcast.shared_mem;
     iface_addr->coll_id  = iface->my_coll_id;
 
     return UCS_OK;
@@ -46,7 +51,7 @@ static ucs_status_t uct_mm_coll_iface_query(uct_iface_h tl_iface,
         return status;
     }
 
-    iface_attr->cap.flags = UCT_IFACE_FLAG_BCAST    |
+    iface_attr->cap.flags = // TODO: UCT_IFACE_FLAG_BCAST    |
                             UCT_IFACE_FLAG_INCAST   |
                             UCT_IFACE_FLAG_AM_SHORT |
                             UCT_IFACE_FLAG_AM_BCOPY |
@@ -55,6 +60,10 @@ static ucs_status_t uct_mm_coll_iface_query(uct_iface_h tl_iface,
                             UCT_IFACE_FLAG_CONNECT_TO_IFACE;
 
     iface_attr->iface_addr_len = sizeof(uct_mm_coll_iface_addr_t);
+
+    uct_mm_coll_iface_t *iface = ucs_derived_of(tl_iface, uct_mm_coll_iface_t);
+    iface_attr->cap.am.max_short = iface->super.config.fifo_elem_size -
+                                   sizeof(uct_mm_coll_fifo_element_t);
 
     return UCS_OK;
 }
@@ -84,47 +93,15 @@ static uct_iface_ops_t uct_mm_coll_iface_ops = {
     .iface_is_reachable       = uct_sm_iface_is_reachable
 };
 
-static ucs_status_t uct_mm_coll_allocate_fifo_mem(uct_mm_coll_iface_t *iface,
-                                                  uct_mm_iface_config_t *config,
-                                                  uct_md_h md)
-{
-    uct_mm_fifo_ctl_t *ctl;
-    size_t size_to_alloc;
-    ucs_status_t status;
-
-    /* allocate the receive FIFO */
-    size_to_alloc = UCT_MM_GET_FIFO_SIZE(&iface->super);
-
-    status = uct_mm_md_mapper_ops(md)->alloc(md, &size_to_alloc, config->hugetlb_mode,
-                                             0, "mm coll fifo", &iface->bcast_shared_mem,
-                                             &iface->bcast_fifo_mm_id, &iface->super.path);
-    if (status != UCS_OK) {
-        ucs_error("Failed to allocate memory for the receive FIFO in mm. size: %zu : %m",
-                   size_to_alloc);
-        return status;
-    }
-
-    ctl = uct_mm_set_fifo_ctl(iface->bcast_shared_mem);
-    uct_mm_set_fifo_elems_ptr(iface->bcast_shared_mem, &iface->bcast_fifo_elements);
-
-    /* Make sure head and tail are cache-aligned, and not on same cacheline, to
-     * avoid false-sharing.
-     */
-    ucs_assert_always((((uintptr_t)&ctl->head) % UCS_SYS_CACHE_LINE_SIZE) == 0);
-    ucs_assert_always((((uintptr_t)&ctl->tail) % UCS_SYS_CACHE_LINE_SIZE) == 0);
-    ucs_assert_always(((uintptr_t)&ctl->tail - (uintptr_t)&ctl->head) >= UCS_SYS_CACHE_LINE_SIZE);
-
-    iface->bcast_fifo_ctl = ctl;
-
-    ucs_assert(iface->bcast_shared_mem != NULL);
-    return UCS_OK;
-}
-
 static ucs_status_t uct_mm_coll_iface_query_empty(uct_iface_h tl_iface,
                                                   uct_iface_attr_t *iface_attr)
 {
     memset(iface_attr, 0, sizeof(*iface_attr));
     return UCS_OK;
+}
+
+static void uct_mm_coll_iface_close_empty(uct_iface_h iface)
+{
 }
 
 static UCS_CLASS_INIT_FUNC(uct_mm_coll_iface_t, uct_md_h md, uct_worker_h worker,
@@ -133,75 +110,65 @@ static UCS_CLASS_INIT_FUNC(uct_mm_coll_iface_t, uct_md_h md, uct_worker_h worker
 {
     int i;
     ucs_status_t status;
-    uct_mm_fifo_element_t* mm_fifo_elem_p;
-    uct_mm_coll_fifo_element_t* mm_coll_fifo_elem_p;
+    uct_mm_coll_fifo_element_t* fifo_elem_p;
 
     /* No need (or way) to initialize anything if no information is given */
     if (!(params->field_mask & UCT_IFACE_PARAM_FIELD_COLL_INFO)) {
         self->super.super.super.ops.iface_query = uct_mm_coll_iface_query_empty;
+        self->super.super.super.ops.iface_close = uct_mm_coll_iface_close_empty;
         return UCS_OK;
     }
 
-    UCT_CHECK_PARAM(params->node_info.proc_cnt < 8 * sizeof(mm_coll_fifo_elem_p->pending),
+    UCT_CHECK_PARAM(params->node_info.proc_cnt < 8 * sizeof(fifo_elem_p->pending),
             "Number of group members exceeds the supported maximum");
-    UCT_CHECK_PARAM(params->node_info.proc_idx < 8 * sizeof(mm_coll_fifo_elem_p->pending),
+    UCT_CHECK_PARAM(params->node_info.proc_idx < 8 * sizeof(fifo_elem_p->pending),
             "Group member ID exceeds the supported maximum");
 
+    /* Initialize my incoming FIFO (for RX) */
     UCS_CLASS_CALL_SUPER_INIT(uct_mm_iface_t, md, worker, params, tl_config);
 
-    status = uct_mm_md_query(md, &self->md_attr);
-    if (status != UCS_OK) {
-        return status;
-    }
-
-    /* create the receive FIFO */
-    /* use specific allocator to allocate and attach memory and check the
-     * requested hugetlb allocation mode */
-    status = uct_mm_coll_allocate_fifo_mem(self, ucs_derived_of(tl_config,
-            uct_mm_iface_config_t), md);
-    if (status != UCS_OK) {
-        return status;
-    }
+    /* Initialize my broadcast FIFO (for TX) */
+    void *temp_self = self;
+    self = (void*)&self->bcast;
+    UCS_CLASS_CALL_SUPER_INIT(uct_mm_iface_t, md, worker, params, tl_config);
+    self = temp_self;
 
     for (i = 0; i < self->super.config.fifo_size; i++) {
         /* Initialize the recv-FIFO */
-        mm_fifo_elem_p = UCT_MM_IFACE_GET_FIFO_ELEM(&self->super,
-                self->super.recv_fifo_elements, i);
-        mm_coll_fifo_elem_p = ucs_container_of(mm_fifo_elem_p,
-                uct_mm_coll_fifo_element_t, super);
-        mm_coll_fifo_elem_p->super.flags = UCT_MM_FIFO_ELEM_FLAG_OWNER;
-        mm_coll_fifo_elem_p->pending = 0;
+        fifo_elem_p = UCT_MM_COLL_IFACE_GET_FIFO_ELEM(self, &self->super, i);
+        fifo_elem_p->pending = 0;
 
-        status = ucs_spinlock_sm_init(&mm_coll_fifo_elem_p->lock);
+        status = ucs_spinlock_sm_init(&fifo_elem_p->lock);
         if (status != UCS_OK) {
             return status;
         }
 
         /* Initialize the send-FIFO */
-        mm_fifo_elem_p = UCT_MM_IFACE_GET_FIFO_ELEM(&self->super,
-                self->bcast_fifo_elements, i);
-        mm_coll_fifo_elem_p = ucs_container_of(mm_fifo_elem_p,
-                uct_mm_coll_fifo_element_t, super);
-        mm_coll_fifo_elem_p->super.flags = UCT_MM_FIFO_ELEM_FLAG_OWNER;
-        mm_coll_fifo_elem_p->pending = 0;
+        fifo_elem_p = UCT_MM_COLL_IFACE_GET_FIFO_ELEM(self, &self->bcast, i);
+        fifo_elem_p->pending = 0;
 
-        status = ucs_spinlock_sm_init(&mm_coll_fifo_elem_p->lock);
+        status = ucs_spinlock_sm_init(&fifo_elem_p->lock);
         if (status != UCS_OK) {
             return status;
         }
+    }
+
+    /* Get the attributes of this MD for connection establishment later */
+    status = uct_mm_md_query(md, &self->md_attr);
+    if (status != UCS_OK) {
+        return status;
     }
 
     /* Fill-in interface fields */
     size_t eps_size             = (params->node_info.proc_cnt + 1) *
                                   sizeof(uct_mm_coll_peer_ep_t);
     self->eps                   = UCS_ALLOC_CHECK(eps_size, "mm_coll_ep_slots");
-    self->bcast_fifo_ctl->head  = 0;
-    self->bcast_fifo_ctl->tail  = 0;
-    self->bcast_index           = 0;
+    memset(self->eps, 0, eps_size);
+
     self->my_coll_id            = params->node_info.proc_idx;
+    self->sm_proc_cnt           = params->node_info.proc_cnt;
     self->my_mask               = UCS_BIT(params->node_info.proc_idx);
     self->peer_mask             = UCS_MASK(params->node_info.proc_cnt) & ~self->my_mask;
-    memset(self->eps, 0, eps_size);
 
     /* Prepare the loop-back address */
     uint64_t sm_dev_addr;
@@ -250,31 +217,21 @@ static UCS_CLASS_INIT_FUNC(uct_mm_coll_iface_t, uct_md_h md, uct_worker_h worker
 
 static UCS_CLASS_CLEANUP_FUNC(uct_mm_coll_iface_t)
 {
-    /* return all the descriptors that are now 'assigned' to the FIFO,
-     * to their mpool (uct_mm_iface_free_rx_descs) */
-    uct_mm_fifo_element_t* fifo_elem_p;
-    uct_mm_recv_desc_t *desc;
-    unsigned i;
+    uct_mm_coll_iface_ops.ep_destroy((uct_ep_t*)self->eps[0].ep);
 
+    int i;
+    uct_mm_coll_fifo_element_t* fifo_elem_p;
     for (i = 0; i < self->super.config.fifo_size; i++) {
-        fifo_elem_p = UCT_MM_IFACE_GET_FIFO_ELEM(&self->super,
-                                                 self->bcast_fifo_elements, i);
-        desc = UCT_MM_IFACE_GET_DESC_START(&self->super, fifo_elem_p);
-        ucs_mpool_put(desc);
+        /* Destroy the recv-FIFO */
+        fifo_elem_p = UCT_MM_COLL_IFACE_GET_FIFO_ELEM(self, &self->super, i);
+        ucs_spinlock_destroy(&fifo_elem_p->lock);
+
+        /* Destroy the send-FIFO */
+        fifo_elem_p = UCT_MM_COLL_IFACE_GET_FIFO_ELEM(self, &self->bcast, i);
+        ucs_spinlock_destroy(&fifo_elem_p->lock);
     }
 
-    ucs_free(self->eps);
-
-    /* release the memory allocated for the FIFO */
-    size_t size_to_free      = UCT_MM_GET_FIFO_SIZE(&self->super);
-    uct_mm_mapper_ops_t *ops = uct_mm_md_mapper_ops(self->super.super.md);
-    ucs_status_t status      = ops->free(self->bcast_shared_mem,
-                                         self->bcast_fifo_mm_id,
-                                         size_to_free,
-                                         self->super.path);
-    if (status != UCS_OK) {
-        ucs_warn("Unable to release shared memory segment: %m");
-    }
+    UCS_CLASS_CLEANUP(uct_mm_iface_t, &self->bcast);
 }
 
 UCS_CLASS_DEFINE(uct_mm_coll_iface_t, uct_mm_iface_t);

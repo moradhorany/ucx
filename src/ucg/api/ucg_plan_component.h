@@ -253,9 +253,9 @@ enum ucg_plan_connect_flags {
 /* Helper function for connecting to other group members - by their index */
 typedef ucs_status_t (*ucg_plan_reg_handler_cb)(uct_iface_h iface, void *arg);
 ucs_status_t ucg_plan_connect(ucg_group_h group, ucg_group_member_index_t idx,
-                              enum ucg_plan_connect_flags flags,
+                              enum ucg_plan_connect_flags flags, uint16_t *sm_cnt,
                               uct_ep_h *ep_p, const uct_iface_attr_t **ep_attr_p,
-                              uct_md_h *md_p, const uct_md_attr_t **md_attr_p);
+                              uct_md_h *md_p, const uct_md_attr_t    **md_attr_p);
 
 /* Helper function for selecting other planners - to be used as fall-back */
 ucs_status_t ucg_plan_select(ucg_group_h group, const char* planner_name,

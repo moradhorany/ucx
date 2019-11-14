@@ -31,6 +31,8 @@ typedef struct ucg_groups {
     ucs_list_link_t       groups_head;
     ucg_group_id_t        next_id;
     ucp_rsc_index_t       mm_coll_tl_id;
+    uint32_t              num_local_peers;
+    uint32_t              my_local_peer_idx;
 
     khash_t(ucg_group_ep) eps;
     unsigned              iface_cnt;

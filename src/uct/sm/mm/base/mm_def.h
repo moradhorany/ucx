@@ -23,9 +23,8 @@ typedef struct uct_mm_remote_seg        uct_mm_remote_seg_t;
 
 enum {
     UCT_MM_FIFO_ELEM_FLAG_OWNER  = UCS_BIT(0),  /* new/old info */
-    UCT_MM_FIFO_ELEM_FLAG_INLINE = UCS_BIT(1),  /* if inline or not */
-
-    UCT_MM_FIFO_ELEM_FLAG_LAST   = UCS_BIT(2)
+    UCT_MM_FIFO_ELEM_FLAG_BATCH  = UCT_CB_PARAM_FLAG_BATCH,
+    UCT_MM_FIFO_ELEM_FLAG_INLINE = UCS_BIT(2)   /* if inline or not */
 };
 
 enum {
@@ -35,7 +34,7 @@ enum {
 
 #define UCT_MM_IFACE_GET_FIFO_ELEM(_iface, _fifo , _index) \
           (uct_mm_fifo_element_t*) ((char*)(_fifo) + ((_index) * \
-          (_iface)->config.fifo_elem_size));
+          (_iface)->config.fifo_elem_size))
 
 #define UCT_MM_IFACE_GET_DESC_START(_iface, _fifo_elem_p) \
           (uct_mm_recv_desc_t *) ((_fifo_elem_p)->desc_chunk_base_addr +  \

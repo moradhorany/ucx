@@ -16,6 +16,7 @@ static ucs_status_t ucs_spinlock_init_internal(ucs_spinlock_t *lock, int flags)
 
     ret = pthread_spin_init(&lock->lock, flags);
     if (ret != 0) {
+        ucs_error("failed to initialize SM spinlock: %m");
         return UCS_ERR_IO_ERROR;
     }
 

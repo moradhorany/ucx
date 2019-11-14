@@ -482,7 +482,7 @@ static void ucg_builtin_step_am_zcopy_comp_step_check_cb(uct_completion_t *self,
     }
 }
 
-static inline ucs_status_t ucg_builtin_step_zcopy_prep(ucg_builtin_op_step_t *step)
+ucs_status_t ucg_builtin_step_zcopy_prep(ucg_builtin_op_step_t *step)
 {
     /* Allocate callback context for zero-copy sends */
     uint32_t zcomp_cnt         = step->phase->ep_cnt * step->fragments;

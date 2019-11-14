@@ -1282,7 +1282,7 @@ static ucs_status_t ucp_wireup_add_smcoll_lane(ucp_ep_h ep, unsigned address_cou
     criteria.local_md_flags     = 0;
     criteria.remote_md_flags    = 0;
     criteria.remote_iface_flags = /* the same as local_iface_flags */
-    criteria.local_iface_flags  = UCT_IFACE_FLAG_AM_BCOPY | UCT_IFACE_FLAG_BCAST;
+    criteria.local_iface_flags  = UCT_IFACE_FLAG_AM_BCOPY | UCT_IFACE_FLAG_INCAST;
     criteria.calc_score         = ucp_wireup_am_score_func;
 
     status = ucp_wireup_select_transport(ep, address_list, address_count, &criteria,

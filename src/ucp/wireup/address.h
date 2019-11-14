@@ -31,6 +31,7 @@ enum {
          UCT_IFACE_FLAG_EVENT_RECV |
          UCT_IFACE_FLAG_EVENT_RECV_SIG |
          UCT_IFACE_FLAG_PENDING |
+         UCT_IFACE_FLAG_INCAST |
          UCT_IFACE_FLAG_BCAST
 };
 
