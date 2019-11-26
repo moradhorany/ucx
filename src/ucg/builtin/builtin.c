@@ -102,15 +102,17 @@ UCS_PROFILE_FUNC(ucs_status_t, ucg_builtin_am_handler,
                (slot->step_idx <= header->step_idx));
     if (ucs_likely(slot->cb && (header->local_id == slot->local_id))) {
         /* Make sure the packet indeed belongs to the collective currently on */
-        length -= sizeof(ucg_builtin_header_t);
-        am_flags &= UCT_CB_PARAM_FLAG_BATCH;
+        int is_bcopy = am_flags & UCT_CB_PARAM_FLAG_DESC;
+        int is_batch = am_flags & UCT_CB_PARAM_FLAG_BATCH;
+        data         = header + 1;
+        length      -= sizeof(ucg_builtin_header_t);
+
         ucs_assert((header->remote_offset + length) <=
                    slot->req.step->buffer_length);
         ucs_assert((length == 0) ||
                    (length == slot->req.step->buffer_length) ||
                    ((length <= slot->req.step->fragment_length) &&
                     (slot->req.step->fragments > 1)));
-
 
         ucs_trace_req("ucg_builtin_am_handler CB: coll_id %u step_idx %u cb %p pending %u",
                 header->coll_id, header->step_idx, slot->cb, slot->req.pending);
@@ -120,18 +122,16 @@ UCS_PROFILE_FUNC(ucs_status_t, ucg_builtin_am_handler,
             /* Unless in batch mode - this runs only once */
             UCS_PROFILE_CODE("ucg_builtin_am_handler_cb") {
                 is_step_complete = slot->cb(&slot->req, header->remote_offset,
-                                            header + 1, length);
+                                            data, length);
             }
 
-            if (ucs_likely(is_step_complete || !am_flags)) {
+            if (ucs_likely(is_step_complete || !is_batch)) {
                 break;
             }
 
             /* Assume all the children are in this one message */
-            header = (ucg_builtin_header_t*)((uint8_t*)header +
-                    ucs_align_up(length + sizeof(*header), UCS_SYS_CACHE_LINE_SIZE));
-            ucs_assert(((ucg_builtin_header_t*)data)->local_id == header->local_id);
-            ucs_assert(((ucg_builtin_header_t*)data)->group_id == header->group_id);
+            data = (uint8_t*)data + (is_bcopy ?
+                    ucs_align_up(length, UCS_SYS_CACHE_LINE_SIZE) : length);
         } while (1);
 
         return UCS_OK;
@@ -542,23 +542,23 @@ ucs_status_t ucg_builtin_connect(ucg_builtin_group_ctx_t *ctx,
 
     /* Set the thresholds */
     phase->max_short_one = phase->ep_attr->cap.am.max_short - sizeof(ucg_builtin_header_t);
-    phase->max_short_max = ctx->config->short_max_tx;
+    phase->max_short_max = ctx->config->short_max_tx - sizeof(ucg_builtin_header_t);
     // TODO: support UCS_CONFIG_MEMUNITS_AUTO
     if (phase->max_short_one > phase->max_short_max) {
-        phase->max_short_one = phase->max_short_max;
+        phase->max_short_one = phase->max_short_max - sizeof(ucg_builtin_header_t);
     }
 
     phase->max_bcopy_one = phase->ep_attr->cap.am.max_bcopy - sizeof(ucg_builtin_header_t);
     if (phase->md_attr->cap.max_reg) {
-        phase->max_bcopy_max = ctx->config->bcopy_max_tx;
+        phase->max_bcopy_max = ctx->config->bcopy_max_tx - sizeof(ucg_builtin_header_t);
         // TODO: support UCS_CONFIG_MEMUNITS_AUTO
         if (phase->max_bcopy_one > phase->max_bcopy_max) {
-            phase->max_bcopy_one = phase->max_bcopy_max;
+            phase->max_bcopy_one = phase->max_bcopy_max - sizeof(ucg_builtin_header_t);
         }
 
         phase->max_zcopy_one = phase->ep_attr->cap.am.max_zcopy - sizeof(ucg_builtin_header_t);
         if (phase->max_zcopy_one < phase->max_bcopy_max) {
-            phase->max_zcopy_one = phase->max_bcopy_max;
+            phase->max_zcopy_one = phase->max_bcopy_max - sizeof(ucg_builtin_header_t);
         }
     } else {
         // TODO: issue a warning?

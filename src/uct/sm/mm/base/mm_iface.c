@@ -180,47 +180,36 @@ ucs_status_t uct_mm_assign_desc_to_fifo_elem(uct_mm_iface_t *iface,
     return UCS_OK;
 }
 
-static UCS_F_ALWAYS_INLINE
-ucs_status_t uct_mm_iface_process_recv(uct_mm_iface_t *iface,
-                                       uct_mm_fifo_element_t* elem,
-                                       void *data, int is_batch_disabled)
+static inline ucs_status_t uct_mm_iface_process_recv(uct_mm_iface_t *iface,
+                                                     uct_mm_fifo_element_t* elem)
 {
     ucs_status_t status;
-    int batch_flag = is_batch_disabled ? 0 :
-            elem->flags & UCT_MM_FIFO_ELEM_FLAG_BATCH;
+    void         *data;
 
     if (ucs_likely(elem->flags & UCT_MM_FIFO_ELEM_FLAG_INLINE)) {
         /* read short (inline) messages from the FIFO elements */
         uct_iface_trace_am(&iface->super, UCT_AM_TRACE_TYPE_RECV, elem->am_id,
-                           data, elem->length, batch_flag ? "RX: AM_SHORT" :
-                                                            "RX: AM_SHORT (BATCH)");
-        status = uct_mm_iface_invoke_am(iface, elem->am_id, data, elem->length,
-                                        batch_flag);
+                           elem + 1, elem->length, "RX: AM_SHORT");
+        status = uct_mm_iface_invoke_am(iface, elem->am_id, elem + 1,
+                                        elem->length, 0);
     } else {
+        /* read bcopy messages from the receive descriptors */
+        VALGRIND_MAKE_MEM_DEFINED(elem->desc_chunk_base_addr + elem->desc_offset,
+                                  elem->length);
+
         data = elem->desc_chunk_base_addr + elem->desc_offset;
 
-        /* read bcopy messages from the receive descriptors */
-        VALGRIND_MAKE_MEM_DEFINED(data, elem->length);
-
         uct_iface_trace_am(&iface->super, UCT_AM_TRACE_TYPE_RECV, elem->am_id,
-                           data, elem->length, batch_flag ? "RX: AM_BCOPY" :
-                                                            "RX: AM_BCOPY (BATCH)");
+                           data, elem->length, "RX: AM_BCOPY");
 
         status = uct_mm_iface_invoke_am(iface, elem->am_id, data, elem->length,
-                                        UCT_CB_PARAM_FLAG_DESC | batch_flag);
-
+                                        UCT_CB_PARAM_FLAG_DESC);
         if (status != UCS_OK) {
             /* assign a new receive descriptor to this FIFO element.*/
             uct_mm_assign_desc_to_fifo_elem(iface, elem, 0);
         }
     }
     return status;
-}
-
-ucs_status_t uct_mm_iface_process_recv_ext(uct_mm_iface_t *iface,
-                                           uct_mm_fifo_element_t* elem,
-                                           void *data, int is_batch_disabled) {
-    return uct_mm_iface_process_recv(iface, elem, data, is_batch_disabled);
 }
 
 static inline unsigned uct_mm_iface_poll_fifo(uct_mm_iface_t *iface)
@@ -241,14 +230,13 @@ static inline unsigned uct_mm_iface_poll_fifo(uct_mm_iface_t *iface)
     read_index_elem = UCT_MM_IFACE_GET_FIFO_ELEM(iface, iface->recv_fifo_elements ,read_index_loc);
 
     /* check the read_index to see if there is a new item to read (checking the owner bit) */
-    if (((read_index >> iface->fifo_shift) & 1) ==
-        ((read_index_elem->flags) & UCT_MM_FIFO_ELEM_FLAG_OWNER)) {
+    if (((read_index >> iface->fifo_shift) & 1) == ((read_index_elem->flags) & 1)) {
 
         /* read from read_index_elem */
         ucs_memory_cpu_load_fence();
         ucs_assert(iface->read_index <= iface->recv_fifo_ctl->head);
 
-        status = uct_mm_iface_process_recv(iface, read_index_elem, read_index_elem + 1, 1);
+        status = uct_mm_iface_process_recv(iface, read_index_elem);
         if (status != UCS_OK) {
             /* the last_recv_desc is in use. get a new descriptor for it */
             UCT_TL_IFACE_GET_RX_DESC(&iface->super, &iface->recv_desc_mp,
@@ -601,7 +589,7 @@ err:
     return status;
 }
 
-static UCS_CLASS_CLEANUP_FUNC(uct_mm_iface_t)
+UCS_CLASS_CLEANUP_FUNC(uct_mm_iface_t)
 {
     ucs_status_t status;
     size_t size_to_free;

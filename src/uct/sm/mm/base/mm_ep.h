@@ -55,6 +55,10 @@ ucs_status_t uct_mm_ep_flush(uct_ep_h tl_ep, unsigned flags,
 ucs_status_t uct_mm_ep_pending_add(uct_ep_h tl_ep, uct_pending_req_t *n,
                                    unsigned flags);
 
+ucs_arbiter_cb_result_t uct_mm_ep_abriter_purge_cb(ucs_arbiter_t *arbiter,
+                                                   ucs_arbiter_elem_t *elem,
+                                                   void *arg);
+
 void uct_mm_ep_pending_purge(uct_ep_h ep, uct_pending_purge_callback_t cb,
                              void *arg);
 

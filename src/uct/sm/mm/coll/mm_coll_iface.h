@@ -12,43 +12,39 @@
 
 #define UCT_MM_COLL_TL_NAME "mm_coll"
 
-typedef uint64_t uct_mm_coll_peer_mask_t;
-
 typedef struct uct_mm_coll_iface_config {
-    uct_mm_iface_config_t    super;
+    uct_mm_iface_config_t super;
 } uct_mm_coll_iface_config_t;
 
 typedef struct uct_mm_coll_iface_addr {
-    uct_mm_iface_addr_t      rx;
-    uct_mm_iface_addr_t      tx;
-    uint32_t                 coll_id;
+    uct_mm_iface_addr_t rx;
+    uct_mm_iface_addr_t tx;
+    uint32_t            coll_id;
 } UCS_S_PACKED uct_mm_coll_iface_addr_t;
 
 typedef struct uct_mm_coll_fifo_element {
-    uct_mm_fifo_element_t    super;
-    ucs_spinlock_t           lock;
-    volatile uct_mm_coll_peer_mask_t pending;
-} UCS_S_PACKED uct_mm_coll_fifo_element_t;
+    uct_mm_fifo_element_t super;
+    ucs_spinlock_pure_t   lock;
+    volatile uint32_t     pending;
+} uct_mm_coll_fifo_element_t;
 
 typedef struct uct_mm_coll_ep uct_mm_coll_ep_t;
 
 typedef struct uct_mm_coll_peer_ep {
-    uint64_t          peer_id;
 #define UCT_MM_COLL_MY_PEER_ID ((uint64_t)-1)
 #define UCT_MM_COLL_NO_PEER_ID ((uint64_t)-2)
+    uint64_t          peer_id;
     uct_mm_coll_ep_t *ep;
 } uct_mm_coll_peer_ep_t;
 
 typedef struct uct_mm_coll_iface {
-    uct_mm_iface_t           super; /* The "recv FIFO" is used for many-to-one */
-                                    /* collectives, such as reduce or gather */
-    uct_mm_iface_t           bcast; /* The "bcast FIFO" is used for one-to-many */
-                                    /* collectives, such as bcast or scatter */
+    uct_mm_iface_t          super; /* The "recv FIFO" is used for many-to-one */
+                                   /* collectives, such as reduce or gather */
+    uct_mm_iface_t          bcast; /* The "bcast FIFO" is used for one-to-many */
+                                   /* collectives, such as bcast or scatter */
 
     uint32_t                my_coll_id;
     uint32_t                sm_proc_cnt;
-    uct_mm_coll_peer_mask_t my_mask;
-    uct_mm_coll_peer_mask_t peer_mask;
     uct_md_attr_t           md_attr;
 
     /* Array of endpoints to different peers, ordered by connection time */

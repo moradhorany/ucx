@@ -12,18 +12,36 @@
 
 #include <uct/sm/mm/base/mm_ep.h>
 
+typedef struct uct_mm_coll_recv_desc {
+    uct_recv_desc_t   super;
+    uct_mm_coll_ep_t *ep;
+} uct_mm_coll_recv_desc_t;
+
 struct uct_mm_coll_ep {
-    uct_base_ep_t super;
+    uct_base_ep_t           super;
 
-    uct_mm_ep_t  *tx;           /* For sending messages to the root */
-    uint64_t      tx_index;     /* TX actual reading location */
-    uint64_t      tx_peer_mask; /* The mask of the remote peer */
+    uct_mm_ep_t            *tx;              /* For sending messages to the root */
+    uct_mm_ep_t            *rx;              /* For receiving messages, broadcasted by a peer */
 
-    uct_mm_ep_t  *rx;           /* For receiving messages, broadcasted by a peer */
-    uint64_t      rx_index;     /* RX actual reading location */
+    uint8_t                 my_coll_id;      /* My ID within this host */
+    uint8_t                 my_offset;       /* Where to write in "batch mode" */
+    uint8_t                 fifo_shift;      /* shortcut to iface->fifo_shift */
+    uint8_t                 is_loopback;     /* Indicates a special endpoint */
+    uint32_t                tx_cnt;          /* shortcut to iface->sm_proc_cnt */
+    unsigned                tx_index;        /* TX next writing location */
+    unsigned                rx_index;        /* RX next reading location */
 
-    uint32_t      my_offset;    /* My offset, for batched writes */
-};
+    unsigned                fifo_mask;       /* shortcut to iface->fifo_mask */
+    unsigned                fifo_size;       /* shortcut to iface->config.fifo_size */
+    unsigned                fifo_elem_size;  /* shortcut to iface->config.fifo_elem_size */
+    unsigned                reserved;        /* reserved for future use */
+
+    /* --- cache-line limit (with ENABLE_STATS) --- */
+
+    uct_mm_coll_recv_desc_t release_desc;    /* Release descriptor */
+    uint8_t                 padding[ucs_padding(sizeof(uct_mm_coll_recv_desc_t),
+                                                UCS_SYS_CACHE_LINE_SIZE)];
+} UCS_S_PACKED UCS_V_ALIGNED(UCS_SYS_CACHE_LINE_SIZE);
 
 UCS_CLASS_DECLARE_NEW_FUNC(uct_mm_coll_ep_t, uct_ep_t, const uct_ep_params_t*);
 UCS_CLASS_DECLARE_DELETE_FUNC(uct_mm_coll_ep_t, uct_ep_t);
