@@ -48,6 +48,7 @@ typedef struct uct_mm_coll_iface {
 
     /* Array of endpoints to different peers, ordered by connection time */
     uct_mm_coll_peer_ep_t  *eps;
+    // TODO: allocate (and re-allocate) an array where each EP is aligned
 } uct_mm_coll_iface_t;
 
 unsigned uct_mm_coll_iface_progress(void *arg);
