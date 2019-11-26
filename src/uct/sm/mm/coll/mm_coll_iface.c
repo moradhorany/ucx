@@ -51,7 +51,7 @@ static ucs_status_t uct_mm_coll_iface_query(uct_iface_h tl_iface,
         return status;
     }
 
-    iface_attr->cap.flags = // TODO: UCT_IFACE_FLAG_BCAST    |
+    iface_attr->cap.flags = UCT_IFACE_FLAG_BCAST    |
                             UCT_IFACE_FLAG_INCAST   |
                             UCT_IFACE_FLAG_AM_SHORT |
                             UCT_IFACE_FLAG_AM_BCOPY |
@@ -126,11 +126,13 @@ static UCS_CLASS_INIT_FUNC(uct_mm_coll_iface_t, uct_md_h md, uct_worker_h worker
 
     /* Initialize my incoming FIFO (for RX) */
     UCS_CLASS_CALL_SUPER_INIT(uct_mm_iface_t, md, worker, params, tl_config);
+    self->super.super.super.ops = uct_mm_coll_iface_ops;
 
     /* Initialize my broadcast FIFO (for TX) */
     void *temp_self = self;
     self = (void*)&self->bcast;
     UCS_CLASS_CALL_SUPER_INIT(uct_mm_iface_t, md, worker, params, tl_config);
+    self->super.super.super.ops = uct_mm_coll_iface_ops;
     self = temp_self;
 
     for (i = 0; i < self->super.config.fifo_size; i++) {
@@ -166,7 +168,7 @@ static UCS_CLASS_INIT_FUNC(uct_mm_coll_iface_t, uct_md_h md, uct_worker_h worker
     memset(self->eps, 0, eps_size);
 
     self->my_coll_id            = params->node_info.proc_idx;
-    self->sm_proc_cnt           = params->node_info.proc_cnt;
+    self->sm_proc_cnt           = params->node_info.proc_cnt - 1;
     self->my_mask               = UCS_BIT(params->node_info.proc_idx);
     self->peer_mask             = UCS_MASK(params->node_info.proc_cnt) & ~self->my_mask;
 
@@ -204,9 +206,6 @@ static UCS_CLASS_INIT_FUNC(uct_mm_coll_iface_t, uct_md_h md, uct_worker_h worker
     /* Only for the bcast endpoint - transfer ownership on (pending == 0) */
     self->eps[0].ep->tx_peer_mask = self->peer_mask;
 
-    /* Overwrite the operations set by the super-class */
-    self->super.super.super.ops = uct_mm_coll_iface_ops;
-
     ucs_debug("Created an MM_COLL iface. FIFO mm id: %zu , coll info: %u/%u",
               self->super.fifo_mm_id, params->node_info.proc_idx,
               params->node_info.proc_cnt);
@@ -214,11 +213,8 @@ static UCS_CLASS_INIT_FUNC(uct_mm_coll_iface_t, uct_md_h md, uct_worker_h worker
     return UCS_OK;
 }
 
-
 static UCS_CLASS_CLEANUP_FUNC(uct_mm_coll_iface_t)
 {
-    uct_mm_coll_iface_ops.ep_destroy((uct_ep_t*)self->eps[0].ep);
-
     int i;
     uct_mm_coll_fifo_element_t* fifo_elem_p;
     for (i = 0; i < self->super.config.fifo_size; i++) {
@@ -232,6 +228,8 @@ static UCS_CLASS_CLEANUP_FUNC(uct_mm_coll_iface_t)
     }
 
     UCS_CLASS_CLEANUP(uct_mm_iface_t, &self->bcast);
+
+    ucs_free(self->eps);
 }
 
 UCS_CLASS_DEFINE(uct_mm_coll_iface_t, uct_mm_iface_t);
