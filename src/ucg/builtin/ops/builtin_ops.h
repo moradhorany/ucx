@@ -64,7 +64,7 @@ enum ucg_builtin_op_step_flags {
     UCG_BUILTIN_OP_STEP_FLAG_FIRST_STEP         = UCS_BIT(3),
     UCG_BUILTIN_OP_STEP_FLAG_LAST_STEP          = UCS_BIT(4),
     UCG_BUILTIN_OP_STEP_FLAG_SINGLE_ENDPOINT    = UCS_BIT(5),
-    UCG_BUILTIN_OP_STEP_FLAG_LENGTH_PER_REQUEST = UCS_BIT(6),
+    UCG_BUILTIN_OP_STEP_FLAG_CALC_SENT_BUFFERS  = UCS_BIT(6),
     UCG_BUILTIN_OP_STEP_FLAG_FRAGMENTED         = UCS_BIT(7),
     UCG_BUILTIN_OP_STEP_FLAG_PIPELINED          = UCS_BIT(8),
     UCG_BUILTIN_OP_STEP_FLAG_SEND_FROM_RECV_BUF = UCS_BIT(9),
@@ -81,8 +81,12 @@ enum ucg_builtin_op_step_flags {
 typedef struct ucg_builtin_op ucg_builtin_op_t;
 typedef struct ucg_builtin_request ucg_builtin_request_t;
 typedef void         (*ucg_builtin_op_init_cb_t)  (ucg_builtin_op_t *op);
+typedef void         (*ucg_builtin_op_fini_cb_t)  (ucg_builtin_op_t *op);
 typedef ucs_status_t (*ucg_builtin_op_optm_cb_t)  (ucg_builtin_op_t *op);
-typedef void         (*ucg_builtin_comp_send_cb_t)(ucg_builtin_request_t *req);
+typedef void         (*ucg_builtin_step_calc_cb_t)(ucg_builtin_request_t *req,
+                                                   uint8_t *send_count,
+                                                   size_t *base_offset,
+                                                   size_t *item_interval);
 typedef int          (*ucg_builtin_comp_recv_cb_t)(ucg_builtin_request_t *req,
                                                    uint64_t offset,
                                                    void *data,
@@ -96,6 +100,7 @@ typedef struct ucg_builtin_zcomp {
 typedef struct ucg_builtin_op_step {
     uint16_t                   flags;            /* @ref enum ucg_builtin_op_step_flags */
     uint8_t                    iter_ep;          /* iterator, somewhat volatile */
+    uint8_t                    iter_calc;        /* iterator, somewhat volatile */
     ucg_offset_t               iter_offset;      /* iterator, somewhat volatile */
 #define UCG_BUILTIN_OFFSET_PIPELINE_READY   ((ucg_offset_t)-1)
 #define UCG_BUILTIN_OFFSET_PIPELINE_PENDING ((ucg_offset_t)-2)
@@ -119,7 +124,7 @@ typedef struct ucg_builtin_op_step {
 #define UCG_BUILTIN_FRAG_PENDING ((uint8_t)-1)
     volatile uint8_t          *fragment_pending;
 
-    ucg_builtin_comp_send_cb_t send_cb;
+    ucg_builtin_step_calc_cb_t calc_cb;
     ucg_builtin_comp_recv_cb_t recv_cb;
 
     /* Fields intended for zero-copy */
@@ -135,6 +140,7 @@ struct ucg_builtin_op {
     unsigned                 opt_cnt; /**< optimization count-down */
     ucg_builtin_op_optm_cb_t optm_cb; /**< optimization function for the operation */
     ucg_builtin_op_init_cb_t init_cb; /**< Initialization function for the operation */
+    ucg_builtin_op_fini_cb_t fini_cb; /**< Finalization function for the operation */
     ucg_builtin_comp_slot_t *slots;   /**< slots pointer, for faster initialization */
     ucs_list_link_t         *resend;  /**< resend pointer, for faster resend */
     ucg_builtin_op_step_t    steps[]; /**< steps required to complete the operation */

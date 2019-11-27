@@ -12,6 +12,108 @@
 #define MPI_IN_PLACE ((void*)0x1)
 #endif
 
+/*
+ * Below is a list of possible callback functions for operation initialization.
+ */
+void ucg_builtin_init_dummy(ucg_builtin_op_t *op) {}
+
+void ucg_builtin_init_gather(ucg_builtin_op_t *op)
+{
+    ucg_builtin_op_step_t *step = &op->steps[0];
+    size_t len = step->buffer_length;
+    memcpy(step->recv_buffer + (op->super.plan->group_id * len),
+            step->send_buffer, len);
+}
+
+void ucg_builtin_init_reduce(ucg_builtin_op_t *op)
+{
+    ucg_builtin_op_step_t *step = &op->steps[0];
+    memcpy(step->recv_buffer, step->send_buffer, step->buffer_length);
+}
+
+/* Alltoall Bruck phase 1/3: shuffle the data */
+void ucg_builtin_init_alltoall(ucg_builtin_op_t *op)
+{
+    ucg_builtin_op_step_t *step = &op->steps[0];
+    int bsize                   = step->buffer_length;
+    int my_idx                  = op->super.plan->my_index;
+    int nProcs                  = op->super.plan->group_size;
+
+    /* Shuffle data: rank i displaces all data blocks "i blocks" upwards */
+    for(int ii=0; ii < nProcs; ii++){
+        memcpy(step->send_buffer + bsize * ii,
+               step->recv_buffer + bsize * ((ii + my_idx) % nProcs),
+               bsize);
+    }
+}
+
+/* Alltoall Bruck phase 2/3: send data */
+void ucg_builtin_calc_alltoall(ucg_builtin_request_t *req, uint8_t *send_count,
+                               size_t *base_offset, size_t *item_interval)
+{
+    int nProcs = req->op->super.plan->group_size;
+
+    // k = ceil( log(nProcs) / log(2) ) communication steps
+    //      - For each step k, rank (i+2^k) sends all the data blocks whose k^{th} bits are 1
+    for(int kk = 0; kk < ceil( log(nProcs) / log(2) ); kk++){
+        unsigned bit_k    = UCS_BIT(kk);
+        send_count   [kk] = bit_k;
+        base_offset  [kk] = bit_k;
+        item_interval[kk] = bit_k;
+    }
+}
+
+/* Alltoall Bruck phase 3/3: shuffle the data */
+void ucg_builtin_finalize_alltoall(ucg_builtin_op_t *op)
+{
+    ucg_builtin_op_step_t *step = &op->steps[0];
+    int bsize                   = step->buffer_length;
+    int nProcs                  = op->super.plan->group_size;
+
+    /* Shuffle data: rank i displaces all data blocks up by i+1 blocks and inverts vector */
+    for(int ii = 0; ii < nProcs; ii++){
+        memcpy(step->send_buffer + bsize * ii,
+               step->recv_buffer + bsize * (nProcs - 1 - ii),
+               bsize);
+    }
+}
+
+void ucg_builtin_calc_scatter(ucg_builtin_request_t *req, uint8_t *send_count,
+                              size_t *base_offset, size_t *item_interval)
+{
+    ucg_builtin_op_step_t *step = req->step;
+    *send_count = step->phase->ep_cnt;
+    *base_offset = 0;
+    *item_interval = step->buffer_length;
+}
+
+ucs_status_t ucg_builtin_op_select_callbacks(ucg_builtin_plan_t *plan,
+        ucg_builtin_op_init_cb_t *init_cb, ucg_builtin_op_init_cb_t *fini_cb)
+{
+    switch (plan->phss[0].method) {
+    case UCG_PLAN_METHOD_REDUCE_WAYPOINT:
+    case UCG_PLAN_METHOD_REDUCE_TERMINAL:
+    case UCG_PLAN_METHOD_REDUCE_RECURSIVE:
+        *init_cb = ucg_builtin_init_reduce;
+        break;
+
+    case UCG_PLAN_METHOD_GATHER_WAYPOINT:
+    //TODO: case UCG_PLAN_METHOD_GATHER_TERMINAL:
+        *init_cb = ucg_builtin_init_gather;
+        break;
+
+    case UCG_PLAN_METHOD_ALLTOALL_BRUCK:
+        *init_cb = ucg_builtin_init_alltoall;
+        break;
+
+    default:
+        *init_cb = ucg_builtin_init_dummy;
+        break;
+    }
+
+    return UCS_OK;
+}
+
 static UCS_F_ALWAYS_INLINE ucs_status_t
 ucg_builtin_step_send_flags(ucg_builtin_op_step_t *step,
                             ucg_builtin_plan_phase_t *phase,
@@ -150,7 +252,8 @@ ucs_status_t ucg_builtin_step_create(ucg_builtin_plan_phase_t *phase,
     switch (phase->method) {
     /* Send-only */
     case UCG_PLAN_METHOD_SCATTER_TERMINAL:
-        extra_flags      |= UCG_BUILTIN_OP_STEP_FLAG_LENGTH_PER_REQUEST;
+        extra_flags      |= UCG_BUILTIN_OP_STEP_FLAG_CALC_SENT_BUFFERS;
+        step->calc_cb     = ucg_builtin_calc_scatter;
         /* no break */
     case UCG_PLAN_METHOD_SEND_TERMINAL:
         step->flags       = send_flag | extra_flags;
@@ -165,7 +268,7 @@ ucs_status_t ucg_builtin_step_create(ucg_builtin_plan_phase_t *phase,
 
     /* Recv-all, Send-one */
     case UCG_PLAN_METHOD_GATHER_WAYPOINT:
-        extra_flags      |= UCG_BUILTIN_OP_STEP_FLAG_LENGTH_PER_REQUEST;
+        extra_flags      |= UCG_BUILTIN_OP_STEP_FLAG_CALC_SENT_BUFFERS;
         /* no break */
     case UCG_PLAN_METHOD_REDUCE_WAYPOINT:
         if (send_flag & UCG_BUILTIN_OP_STEP_FLAG_FRAGMENTED) {
@@ -195,7 +298,7 @@ ucs_status_t ucg_builtin_step_create(ucg_builtin_plan_phase_t *phase,
             extra_flags  |= UCG_BUILTIN_OP_STEP_FLAG_PIPELINED;
         }
         extra_flags      |= UCG_BUILTIN_OP_STEP_FLAG_RECV1_BEFORE_SEND;
-        extra_flags      |= UCG_BUILTIN_OP_STEP_FLAG_LENGTH_PER_REQUEST;
+        extra_flags      |= UCG_BUILTIN_OP_STEP_FLAG_CALC_SENT_BUFFERS;
         extra_flags      |= UCG_BUILTIN_OP_STEP_FLAG_SEND_FROM_RECV_BUF;
         step->flags       = send_flag | extra_flags;
         step->recv_buffer = *current_data_buffer =
@@ -209,6 +312,14 @@ ucs_status_t ucg_builtin_step_create(ucg_builtin_plan_phase_t *phase,
         extra_flags      |= UCG_BUILTIN_OP_STEP_FLAG_RECV_AFTER_SEND;
         extra_flags      |= UCG_BUILTIN_OP_STEP_FLAG_SEND_FROM_RECV_BUF;
         step->flags       = send_flag | extra_flags;
+        break;
+
+    case UCG_PLAN_METHOD_ALLTOALL_BRUCK:
+        extra_flags      |= UCG_BUILTIN_OP_STEP_FLAG_RECV_AFTER_SEND;
+        extra_flags      |= UCG_BUILTIN_OP_STEP_FLAG_SEND_FROM_RECV_BUF;
+        extra_flags      |= UCG_BUILTIN_OP_STEP_FLAG_CALC_SENT_BUFFERS;
+        step->flags       = send_flag | extra_flags;
+        step->calc_cb     = ucg_builtin_calc_alltoall;
         break;
 
     default:
@@ -269,7 +380,7 @@ ucs_status_t ucg_builtin_op_create(ucg_plan_t *plan,
     int8_t *current_data_buffer          = NULL;
 
     /* Select the right initialization callback */
-    status = ucg_builtin_op_select_callback(builtin_plan, &op->init_cb);
+    status = ucg_builtin_op_select_callbacks(builtin_plan, &op->init_cb, &op->fini_cb);
     if (status != UCS_OK) {
         goto op_cleanup;
     }
