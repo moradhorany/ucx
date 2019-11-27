@@ -425,48 +425,6 @@ ucs_status_t ucg_builtin_step_select_callbacks(ucg_builtin_plan_phase_t *phase,
     return UCS_OK;
 }
 
-/*
- * Below is a list of possible callback functions for operation initialization.
- */
-void ucg_builtin_init_dummy(ucg_builtin_op_t *op) {}
-
-void ucg_builtin_init_gather(ucg_builtin_op_t *op)
-{
-    ucg_builtin_op_step_t *step = &op->steps[0];
-    size_t len = step->buffer_length;
-    memcpy(step->recv_buffer + (op->super.plan->group_id * len),
-            step->send_buffer, len);
-}
-
-void ucg_builtin_init_reduce(ucg_builtin_op_t *op)
-{
-    ucg_builtin_op_step_t *step = &op->steps[0];
-    memcpy(step->recv_buffer, step->send_buffer, step->buffer_length);
-}
-
-ucs_status_t ucg_builtin_op_select_callback(ucg_builtin_plan_t *plan,
-        ucg_builtin_op_init_cb_t *init_cb)
-{
-    switch (plan->phss[0].method) {
-    case UCG_PLAN_METHOD_REDUCE_WAYPOINT:
-    case UCG_PLAN_METHOD_REDUCE_TERMINAL:
-    case UCG_PLAN_METHOD_REDUCE_RECURSIVE:
-        *init_cb = ucg_builtin_init_reduce;
-        break;
-
-    case UCG_PLAN_METHOD_GATHER_WAYPOINT:
-    //TODO: case UCG_PLAN_METHOD_GATHER_TERMINAL:
-        *init_cb = ucg_builtin_init_gather;
-        break;
-
-    default:
-        *init_cb = ucg_builtin_init_dummy;
-        break;
-    }
-
-    return UCS_OK;
-}
-
 static void ucg_builtin_step_am_zcopy_comp_step_check_cb(uct_completion_t *self,
                                                          ucs_status_t status)
 {

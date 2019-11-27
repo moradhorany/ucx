@@ -270,6 +270,7 @@ UCS_PROFILE_FUNC(ucs_status_t, ucg_collective_create,
     plan->group             = group;
     plan->type              = params->type;
     plan->group_id          = group->group_id;
+    plan->group_size        = group->params.member_count;
     plan->am_mp             = &group->worker->am_mp;
     group->cache[coll_mask] = plan;
     ucs_list_head_init(&plan->op_head);

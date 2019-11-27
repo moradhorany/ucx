@@ -457,8 +457,8 @@ ucg_builtin_step_am_zcopy_max(ucg_builtin_request_t *req,
                        /* Step-completion-related indicators */                \
                        _is_first, _is_last, _is_one_ep,                        \
                        /* Send-related  parameters */                          \
-                       _is_scatter, _send_flag, _send_func)                    \
-   case ((_is_scatter   ? UCG_BUILTIN_OP_STEP_FLAG_LENGTH_PER_REQUEST : 0) |   \
+                       _is_calc, _send_flag, _send_func)                       \
+   case ((_is_calc      ? UCG_BUILTIN_OP_STEP_FLAG_CALC_SENT_BUFFERS  : 0) |   \
          (_is_one_ep    ? UCG_BUILTIN_OP_STEP_FLAG_SINGLE_ENDPOINT    : 0) |   \
          (_is_last      ? UCG_BUILTIN_OP_STEP_FLAG_LAST_STEP          : 0) |   \
          (_is_first     ? UCG_BUILTIN_OP_STEP_FLAG_FIRST_STEP         : 0) |   \
@@ -486,13 +486,38 @@ ucg_builtin_step_am_zcopy_max(ucg_builtin_request_t *req,
             req->pending = 2 * step->fragments * phase->ep_cnt;                \
         }                                                                      \
                                                                                \
+        if (_is_calc) {                                                        \
+            ucs_assert(!_is_pipelined);                                        \
+            ucs_assert(step->phase->ep_cnt <                                   \
+                       UCS_BIT(sizeof(step->iter_calc) << 3));                 \
+            step->calc_cb(req, &send_count, &base_offset, &item_interval);     \
+            if (!step->iter_calc) {                                            \
+                if (_is_rbuf) {                                                \
+                    step->recv_buffer += base_offset;                          \
+                } else {                                                       \
+                    step->send_buffer += base_offset;                          \
+                }                                                              \
+                step->iter_calc = send_count;                                  \
+            }                                                                  \
+        }                                                                      \
+                                                                               \
         /* Perform one or many send operations, unless an error occurs */      \
         if (_is_one_ep) {                                                      \
             ucs_assert(!_is_pipelined); /* makes no sense in single-ep case */ \
-            status = _send_func (req, step, phase->single_ep, 0);              \
-            if (ucs_unlikely(UCS_STATUS_IS_ERR(status))) {                     \
-                goto step_execute_error;                                       \
-            }                                                                  \
+            do {                                                               \
+                status = _send_func (req, step, phase->single_ep, 0);          \
+                if (ucs_unlikely(UCS_STATUS_IS_ERR(status))) {                 \
+                    goto step_execute_error;                                   \
+                }                                                              \
+                                                                               \
+                if (_is_calc) {                                                \
+                    if (_is_rbuf) {                                            \
+                        step->recv_buffer += item_interval;                    \
+                    } else {                                                   \
+                        step->send_buffer += item_interval;                    \
+                    }                                                          \
+                }                                                              \
+            } while (_is_calc && --step->iter_calc);                           \
         } else {                                                               \
             if ((_is_pipelined) && (ucs_unlikely(step->iter_offset ==          \
                     UCG_BUILTIN_OFFSET_PIPELINE_PENDING))) {                   \
@@ -519,24 +544,19 @@ ucg_builtin_step_am_zcopy_max(ucg_builtin_request_t *req,
                     goto step_execute_error;                                   \
                 }                                                              \
                                                                                \
-                if (_is_scatter) {                                             \
+                if (_is_calc) {                                                \
                     if (_is_rbuf) {                                            \
-                        step->recv_buffer += step->buffer_length;              \
+                        step->recv_buffer += item_interval;                    \
                     } else {                                                   \
-                        step->send_buffer += step->buffer_length;              \
+                        step->send_buffer += item_interval;                    \
                     }                                                          \
+                    step->iter_calc--;                                         \
                 }                                                              \
             } while (++ep_iter < ep_last);                                     \
                                                                                \
-            if (_is_scatter) { /* restore after a temporary pointer change */  \
-                if (_is_rbuf) {                                                \
-                    step->recv_buffer -= phase->ep_cnt * step->buffer_length;  \
-                } else {                                                       \
-                    step->send_buffer -= phase->ep_cnt * step->buffer_length;  \
-                }                                                              \
-            }                                                                  \
-                                                                               \
             if (_is_pipelined) {                                               \
+                ucs_assert(!_is_calc);                                         \
+                                                                               \
                 /* Reset the iterator for the next pipelined incoming packet */\
                 step->iter_ep = _is_r1s ? 1 : phase->ep_cnt - 1;               \
                 ucs_assert(_is_r1s + _is_rs1 > 0);                             \
@@ -567,6 +587,16 @@ ucg_builtin_step_am_zcopy_max(ucg_builtin_request_t *req,
             }                                                                  \
         }                                                                      \
                                                                                \
+        if (_is_calc) {                                                        \
+            ucs_assert(step->iter_calc == 0);                                  \
+            base_offset += send_count * item_interval;                         \
+                if (_is_rbuf) {                                                \
+                    step->recv_buffer -= base_offset;                          \
+                } else {                                                       \
+                    step->send_buffer -= base_offset;                          \
+                }                                                              \
+        }                                                                      \
+                                                                               \
         /* Potential completions (the operation may have finished by now) */   \
         if ((!_is_recv && !is_zcopy) || (req->pending == 0)) {                 \
             /* Nothing else to do - complete this step */                      \
@@ -581,37 +611,37 @@ ucg_builtin_step_am_zcopy_max(ucg_builtin_request_t *req,
         }                                                                      \
         break;
 
-#define case_send_rs1(r, u, s, p,    _is_rs1, _is_r1s, _is_rbuf, _is_ppld, _is_first, _is_last, _is_one_ep, _is_scatter, _send_flag, _send_func) \
-       case_send_full(r, u, s, p, 0, _is_rs1, _is_r1s, _is_rbuf, _is_ppld, _is_first, _is_last, _is_one_ep, _is_scatter, _send_flag, _send_func) \
-       case_send_full(r, u, s, p, 1, _is_rs1, _is_r1s, _is_rbuf, _is_ppld, _is_first, _is_last, _is_one_ep, _is_scatter, _send_flag, _send_func)
+#define case_send_rs1(r, u, s, p,    _is_rs1, _is_r1s, _is_rbuf, _is_ppld, _is_first, _is_last, _is_one_ep, _is_calc, _send_flag, _send_func) \
+       case_send_full(r, u, s, p, 0, _is_rs1, _is_r1s, _is_rbuf, _is_ppld, _is_first, _is_last, _is_one_ep, _is_calc, _send_flag, _send_func) \
+       case_send_full(r, u, s, p, 1, _is_rs1, _is_r1s, _is_rbuf, _is_ppld, _is_first, _is_last, _is_one_ep, _is_calc, _send_flag, _send_func)
 
-#define case_send_r1s(r, u, s, p,    _is_r1s, _is_rbuf, _is_ppld, _is_first, _is_last, _is_one_ep, _is_scatter, _send_flag, _send_func) \
-        case_send_rs1(r, u, s, p, 0, _is_r1s, _is_rbuf, _is_ppld, _is_first, _is_last, _is_one_ep, _is_scatter, _send_flag, _send_func) \
-        case_send_rs1(r, u, s, p, 1, _is_r1s, _is_rbuf, _is_ppld, _is_first, _is_last, _is_one_ep, _is_scatter, _send_flag, _send_func)
+#define case_send_r1s(r, u, s, p,    _is_r1s, _is_rbuf, _is_ppld, _is_first, _is_last, _is_one_ep, _is_calc, _send_flag, _send_func) \
+        case_send_rs1(r, u, s, p, 0, _is_r1s, _is_rbuf, _is_ppld, _is_first, _is_last, _is_one_ep, _is_calc, _send_flag, _send_func) \
+        case_send_rs1(r, u, s, p, 1, _is_r1s, _is_rbuf, _is_ppld, _is_first, _is_last, _is_one_ep, _is_calc, _send_flag, _send_func)
 
-#define case_send_rbuf(r, u, s, p,    _is_rbuf, _is_ppld, _is_first, _is_last, _is_one_ep, _is_scatter, _send_flag, _send_func) \
-         case_send_r1s(r, u, s, p, 0, _is_rbuf, _is_ppld, _is_first, _is_last, _is_one_ep, _is_scatter, _send_flag, _send_func) \
-         case_send_r1s(r, u, s, p, 1, _is_rbuf, _is_ppld, _is_first, _is_last, _is_one_ep, _is_scatter, _send_flag, _send_func)
+#define case_send_rbuf(r, u, s, p,    _is_rbuf, _is_ppld, _is_first, _is_last, _is_one_ep, _is_calc, _send_flag, _send_func) \
+         case_send_r1s(r, u, s, p, 0, _is_rbuf, _is_ppld, _is_first, _is_last, _is_one_ep, _is_calc, _send_flag, _send_func) \
+         case_send_r1s(r, u, s, p, 1, _is_rbuf, _is_ppld, _is_first, _is_last, _is_one_ep, _is_calc, _send_flag, _send_func)
 
-#define case_send_ppld(r, u, s, p,    _is_ppld, _is_first, _is_last, _is_one_ep, _is_scatter, _send_flag, _send_func) \
-        case_send_rbuf(r, u, s, p, 0, _is_ppld, _is_first, _is_last, _is_one_ep, _is_scatter, _send_flag, _send_func) \
-        case_send_rbuf(r, u, s, p, 1, _is_ppld, _is_first, _is_last, _is_one_ep, _is_scatter, _send_flag, _send_func)
+#define case_send_ppld(r, u, s, p,    _is_ppld, _is_first, _is_last, _is_one_ep, _is_calc, _send_flag, _send_func) \
+        case_send_rbuf(r, u, s, p, 0, _is_ppld, _is_first, _is_last, _is_one_ep, _is_calc, _send_flag, _send_func) \
+        case_send_rbuf(r, u, s, p, 1, _is_ppld, _is_first, _is_last, _is_one_ep, _is_calc, _send_flag, _send_func)
 
-#define case_send_first(r, u, s, p,    _is_first, _is_last, _is_one_ep, _is_scatter, _send_flag, _send_func) \
-         case_send_ppld(r, u, s, p, 0, _is_first, _is_last, _is_one_ep, _is_scatter, _send_flag, _send_func) \
-         case_send_ppld(r, u, s, p, 1, _is_first, _is_last, _is_one_ep, _is_scatter, _send_flag, _send_func)
+#define case_send_first(r, u, s, p,    _is_first, _is_last, _is_one_ep, _is_calc, _send_flag, _send_func) \
+         case_send_ppld(r, u, s, p, 0, _is_first, _is_last, _is_one_ep, _is_calc, _send_flag, _send_func) \
+         case_send_ppld(r, u, s, p, 1, _is_first, _is_last, _is_one_ep, _is_calc, _send_flag, _send_func)
 
-#define  case_send_last(r, u, s, p,    _is_last,_is_one_ep, _is_scatter, _send_flag, _send_func) \
-        case_send_first(r, u, s, p, 0, _is_last,_is_one_ep, _is_scatter, _send_flag, _send_func) \
-        case_send_first(r, u, s, p, 1, _is_last,_is_one_ep, _is_scatter, _send_flag, _send_func) \
+#define  case_send_last(r, u, s, p,    _is_last,_is_one_ep, _is_calc, _send_flag, _send_func) \
+        case_send_first(r, u, s, p, 0, _is_last,_is_one_ep, _is_calc, _send_flag, _send_func) \
+        case_send_first(r, u, s, p, 1, _is_last,_is_one_ep, _is_calc, _send_flag, _send_func) \
 
-#define case_send_one_ep(r, u, s, p,    _is_one_ep, _is_scatter, _send_flag, _send_func) \
-          case_send_last(r, u, s, p, 0, _is_one_ep, _is_scatter, _send_flag, _send_func) \
-          case_send_last(r, u, s, p, 1, _is_one_ep, _is_scatter, _send_flag, _send_func)
+#define case_send_one_ep(r, u, s, p,    _is_one_ep, _is_calc, _send_flag, _send_func) \
+          case_send_last(r, u, s, p, 0, _is_one_ep, _is_calc, _send_flag, _send_func) \
+          case_send_last(r, u, s, p, 1, _is_one_ep, _is_calc, _send_flag, _send_func)
 
-#define case_send_scatter(r, u, s, p,    _is_scatter, _send_flag, _send_func) \
-         case_send_one_ep(r, u, s, p, 0, _is_scatter, _send_flag, _send_func) \
-         case_send_one_ep(r, u, s, p, 1, _is_scatter, _send_flag, _send_func)
+#define case_send_scatter(r, u, s, p,    _is_calc, _send_flag, _send_func) \
+         case_send_one_ep(r, u, s, p, 0, _is_calc, _send_flag, _send_func) \
+         case_send_one_ep(r, u, s, p, 1, _is_calc, _send_flag, _send_func)
 
 #define         case_send(r, u, s, p,    _send_flag, _send_func) \
         case_send_scatter(r, u, s, p, 0, _send_flag, _send_func) \
@@ -654,7 +684,11 @@ UCS_PROFILE_FUNC(ucs_status_t, ucg_builtin_step_execute, (req, user_req),
 {
     int is_zcopy;
     uint16_t local_id;
+	uint8_t send_count;
+	size_t base_offset;
+	size_t item_interval;
     ucs_status_t status;
+	
     ucg_builtin_op_step_t *step     = req->step;
     ucg_builtin_plan_phase_t *phase = step->phase;
     ucg_builtin_comp_slot_t *slot   = ucs_container_of(req, ucg_builtin_comp_slot_t, req);

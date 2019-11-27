@@ -103,6 +103,7 @@ typedef struct ucg_plan {
     /* Plan progress */
     ucg_plan_component_t    *planner;
     ucg_group_id_t           group_id;
+    ucg_group_member_index_t group_size;
     ucg_group_member_index_t my_index;
     ucg_group_h              group;
     ucs_mpool_t             *am_mp;

@@ -413,6 +413,9 @@ static void ucg_builtin_print(ucg_plan_t *plan, const ucg_collective_params_t *c
         case UCG_PLAN_METHOD_REDUCE_RECURSIVE:
             printf("Reduce (R), ");
             break;
+        case UCG_PLAN_METHOD_ALLTOALL_BRUCK:
+            printf("Alltoall (R), ");
+            break;
         case UCG_PLAN_METHOD_NEIGHBOR:
             printf("Neighbors, ");
             break;
@@ -495,8 +498,8 @@ static void ucg_builtin_print(ucg_plan_t *plan, const ucg_collective_params_t *c
             flag = ((step.flags & UCG_BUILTIN_OP_STEP_FLAG_SINGLE_ENDPOINT) != 0);
             printf("\n\t\tSINGLE_ENDPOINT: %i", flag);
 
-            flag = ((step.flags & UCG_BUILTIN_OP_STEP_FLAG_LENGTH_PER_REQUEST) != 0);
-            printf("\n\t\tLENGTH_PER_REQUEST: %i", flag);
+            flag = ((step.flags & UCG_BUILTIN_OP_STEP_FLAG_CALC_SENT_BUFFERS) != 0);
+            printf("\n\t\tCALC_SENT_BUFFERS: %i", flag);
 
             flag = ((step.flags & UCG_BUILTIN_OP_STEP_FLAG_FRAGMENTED) != 0);
             printf("\n\t\tFRAGMENTED: %i", flag);
