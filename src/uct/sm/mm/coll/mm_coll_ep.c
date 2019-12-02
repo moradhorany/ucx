@@ -9,25 +9,57 @@
 
 #include <ucs/arch/atomic.h>
 
-#define UCT_MM_COLL_GET_BASE_ADDRESS(_is_short, _is_root, _batch_flag, \
-                                     _len, _elem, _ep, _iface, _is_recv) \
+enum ucg_mm_coll_send_mode {
+    UCG_MM_COLL_SEND_PAYLOAD = 0,
+    UCG_MM_COLL_SEND_PACK_CB,
+    UCG_MM_COLL_SEND_LOCKING_PACK_CB
+};
+
+#define UCG_MM_COLL_HEADER_SIZE (sizeof(uint64_t))
+
+#define UCT_MM_COLL_IFACE_GET_FIFO_ELEM(_ep, _fifo, _index) \
+        ((uct_mm_coll_fifo_element_t*)(((char*)(_fifo) + \
+                                       ((_index) * (_ep)->fifo_elem_size))))
+
+#define UCT_MM_COLL_IFACE_RESET_FIFO_ELEM(_elem, is_loopback) { \
+        ucs_assert((_elem)->pending == is_loopback);\
+        (_elem)->super.length = 0; \
+        (_elem)->pending = 0; \
+}
+
+#define UCT_MM_COLL_GET_BASE_ADDRESS(_is_short, _batch_flag, _len, \
+                                     _elem, _ep, _iface, _is_local, _is_recv) \
 ({ \
     void *ret_address; \
     if (_is_short) { \
-        ret_address = (void*)(_elem + 1); \
-    } else { \
-        ret_address = uct_mm_ep_attach_remote_seg((_ep)->tx, \
-                                                  &(_iface)->super, \
-                                                  &(_elem)->super) + \
-                      (_elem)->super.desc_offset; \
-        VALGRIND_MAKE_MEM_DEFINED(ret_address, (_elem)->super.length); \
-        if (_is_recv) { \
-            _batch_flag |= UCT_CB_PARAM_FLAG_DESC; \
+        ret_address = (void*)((_elem) + 1); \
+        if ((_batch_flag) && ((_ep)->my_offset)) {\
+            size_t short_extension = UCG_MM_COLL_HEADER_SIZE + \
+                (_ep)->my_offset * (_len); \
+            ret_address = (uint8_t*)ret_address + short_extension; \
+            printf("#%i SHORT OFFSET length=%lu offset=%lu\n", getpid(), (_len), short_extension);\
+            ucs_assert(short_extension + (_len) <= ((_ep)->fifo_elem_size - \
+                        sizeof(uct_mm_coll_fifo_element_t))); \
         } \
-    } \
-    if (_batch_flag) { \
-        ret_address = (char*)ret_address + ((_ep)->my_offset * \
-                ucs_align_up(_len, UCS_SYS_CACHE_LINE_SIZE)); \
+    } else { \
+        if (_is_local) { \
+            ret_address = (uint8_t*)(_elem)->super.desc_chunk_base_addr + \
+                                    (_elem)->super.desc_offset; \
+            if (_is_recv) _batch_flag |= UCT_CB_PARAM_FLAG_DESC; \
+        } else { \
+            ret_address = (uint8_t*)uct_mm_ep_attach_remote_seg((_ep)->tx, \
+                                                                &(_iface)->super, \
+                                                                &(_elem)->super) + \
+                          (_elem)->super.desc_offset; \
+            VALGRIND_MAKE_MEM_DEFINED(ret_address, (_elem)->super.length); \
+        } \
+        if ((_batch_flag) && ((_ep)->my_offset)) { \
+            size_t bcopy_extension = (_ep)->my_offset * \
+                ucs_align_up(_len, UCS_SYS_CACHE_LINE_SIZE); \
+            ret_address = (uint8_t*)ret_address + bcopy_extension; \
+            printf("#%i BCOPY OFFSET length=%lu offset=%lu\n", getpid(), (_len), bcopy_extension); \
+            ucs_assert(bcopy_extension + (_len) <= (_iface)->super.config.seg_size); \
+        } \
     } \
     ret_address; \
 })
@@ -38,31 +70,14 @@ static inline void uct_mm_coll_ep_update_cached_tail(uct_mm_ep_t *ep)
     ep->cached_tail = ep->fifo_ctl->tail;
 }
 
-static size_t uct_mm_coll_ep_am_common_write(ucs_spinlock_t *lock,
-        void *base_address, size_t length, uint64_t header, const void *payload,
-        uct_locked_pack_callback_t locked_pack_cb, void *arg,
-        uct_pack_callback_t pack_cb, unsigned flags)
-{
-    if (payload != NULL) {
-        *(uint64_t*)base_address = header;
-        memcpy((char*)base_address + sizeof(header), payload, length);
-        return length + sizeof(header);
-    }
-
-    if (pack_cb != NULL) {
-        return pack_cb(base_address, arg);
-    }
-
-    return locked_pack_cb(base_address, lock, arg);
-}
-
 /* A common mm active message sending function.
  * The first parameter indicates the origin of the call.
  * is_short_add = 1 - perform AM short sending, assuming "+" for incast
  * is_short_add = 0 - perform AM bcopy sending
  */
 static UCS_F_ALWAYS_INLINE ssize_t
-uct_mm_coll_ep_am_common_send(unsigned short_flag, unsigned batch_flag,
+uct_mm_coll_ep_am_common_send(enum ucg_mm_coll_send_mode mode,
+                              unsigned short_flag, unsigned batch_flag,
                               uct_mm_coll_ep_t *coll_ep,
                               uct_mm_coll_iface_t *iface, uint8_t am_id,
                               size_t length, uint64_t header, const void *payload,
@@ -73,85 +88,112 @@ uct_mm_coll_ep_am_common_send(unsigned short_flag, unsigned batch_flag,
     UCT_CHECK_AM_ID(am_id);
 
     /* Grab the next cell I haven't yet written to */
-    uint64_t head = ++coll_ep->tx_index;
+    unsigned head   = ++coll_ep->tx_index;
     uct_mm_ep_t *ep = coll_ep->tx;
-    int is_root    = coll_ep == iface->eps[0].ep;
 
     /* check if there is room in the remote process's receive FIFO to write */
-    if (!UCT_MM_EP_IS_ABLE_TO_SEND(head, ep->cached_tail, iface->super.config.fifo_size)) {
+    if (!UCT_MM_EP_IS_ABLE_TO_SEND(head, ep->cached_tail, coll_ep->fifo_size)) {
         if (!ucs_arbiter_group_is_empty(&ep->arb_group)) {
             /* pending isn't empty. don't send now to prevent out-of-order sending */
             UCS_STATS_UPDATE_COUNTER(ep->super.stats, UCT_EP_STAT_NO_RES, 1);
             coll_ep->tx_index--;
+            printf("CANT SEND1\n");
             return UCS_ERR_NO_RESOURCE;
         } else {
             /* pending is empty */
             /* update the local copy of the tail to its actual value on the remote peer */
             uct_mm_coll_ep_update_cached_tail(ep);
-            if (!UCT_MM_EP_IS_ABLE_TO_SEND(head, ep->cached_tail, iface->super.config.fifo_size)) {
+            if (!UCT_MM_EP_IS_ABLE_TO_SEND(head, ep->cached_tail, coll_ep->fifo_size)) {
                 UCS_STATS_UPDATE_COUNTER(ep->super.stats, UCT_EP_STAT_NO_RES, 1);
                 coll_ep->tx_index--;
+                printf("CANT SEND2\n");
                 return UCS_ERR_NO_RESOURCE;
             }
         }
     }
 
     /* Obtain the next element this process should access */
-    uint64_t elem_index = head & iface->super.fifo_mask;
-    uct_mm_coll_fifo_element_t *elem = (uct_mm_coll_fifo_element_t*)
-            UCT_MM_IFACE_GET_FIFO_ELEM(&iface->super, ep->fifo, elem_index);
-    ucs_assert((elem->pending == 0) || (elem->pending & iface->my_mask));
-
-    /* Calculate the destination address (allocate for BCOPY / BLOCK) */
-    void *base_address = UCT_MM_COLL_GET_BASE_ADDRESS(short_flag, is_root,
-            batch_flag, length, elem, coll_ep, iface, 0);
+    uint64_t elem_index = head & coll_ep->fifo_mask;
+    uct_mm_coll_fifo_element_t *elem =
+            UCT_MM_COLL_IFACE_GET_FIFO_ELEM(coll_ep, ep->fifo, elem_index);
 
     /* Check if this is the first message in this collective operation */
-    uct_mm_coll_peer_mask_t pending;
-    int is_first_elemet, needs_lock;
-    if (ucs_unlikely(elem->pending == 0)) {
-        /* Check for BCOPY or SLOCK or BLOCK to require mutual exclusion */
+    uint32_t pending = ucs_atomic_cswap32(&elem->pending, 0, coll_ep->tx_cnt);
 
-        needs_lock = ((!batch_flag || !short_flag) && !is_root);
-        if (needs_lock) {
-            ucs_spin_lock_alone(&elem->lock);
-        }
-
-        /* Now that there's a lock - check if this is the first element */
-        is_first_elemet = (elem->pending == 0);
+    /* If I'm broadcasting - no need to enable "batched mode" */
+    int is_loopback = coll_ep->is_loopback;
+    if (is_loopback) {
+        batch_flag = 0;
     } else {
-        is_first_elemet = needs_lock = 0;
+        /* Specifically for BCOPY, we need the first writer to write the length so
+         * the others could calculate their base address offset in the batch... */
+        if ((batch_flag && !short_flag) && (pending)) {
+            do {
+                length = elem->super.length;
+            } while (length == 0); /* non-zero since it's not a short message */
+        }
     }
 
-    /* Reduce into the buffer */
-    ucs_spinlock_t *lock = (batch_flag || is_first_elemet) ? NULL : &elem->lock;
-    length = uct_mm_coll_ep_am_common_write(lock, base_address, length,
-            header, payload, locked_pack_cb, arg, pack_cb, flags);
+    /* Calculate the destination address (allocate for BCOPY / BLOCK) */
+    void *base_address = UCT_MM_COLL_GET_BASE_ADDRESS(short_flag, batch_flag,
+            length, elem, coll_ep, iface, is_loopback, 0);
 
-    if (ucs_unlikely(is_first_elemet)) {
-        /* Set the "pending" bit-field to reflect the other processes */
-        pending = elem->pending = iface->peer_mask;
+    /* Check for BCOPY or SLOCK or BLOCK to require mutual exclusion */
+    ucs_spinlock_pure_t *lock;
+    int is_locking_packed_cb = (mode == UCG_MM_COLL_SEND_LOCKING_PACK_CB);
+    int needs_lock = (!batch_flag &&
+                      !is_loopback &&
+                      (!is_locking_packed_cb || (pending == 0)));
+    if (ucs_unlikely(needs_lock)) {
+        ucs_spin_pure_lock(&elem->lock);
+        lock = NULL;
+        /* NULL sets a special mode in locked_pack_cb(), doing copy instead of reduce */
+    } else {
+        lock = (is_locking_packed_cb && pending) ? &elem->lock : NULL;
+    }
 
-        /* Write the per-collective fields (only once per element) */
-        elem->super.am_id  = am_id;
+    /* Reduce into the buffer (or just write, in some cases, e.g. lock is NULL) */
+    switch (mode) {
+    case UCG_MM_COLL_SEND_PAYLOAD:
+        if (batch_flag && coll_ep->my_offset) {
+            memcpy(base_address, payload, length);
+        } else {
+            *(uint64_t*)base_address = header;
+            memcpy((uint64_t*)base_address + 1, payload, length);
+        }
+        length += UCG_MM_COLL_HEADER_SIZE;
+        break;
+
+    case UCG_MM_COLL_SEND_PACK_CB:
+        length = pack_cb(base_address, arg);
+        break;
+
+    case UCG_MM_COLL_SEND_LOCKING_PACK_CB:
+        length = locked_pack_cb(base_address, lock, arg);
+        break;
+    }
+
+    /* Write the per-collective fields (only once per element) */
+    if (ucs_unlikely(pending == 0)) {
         elem->super.length = length;
+        elem->super.am_id  = am_id;
         elem->super.flags  = short_flag | batch_flag |
                 (elem->super.flags & UCT_MM_FIFO_ELEM_FLAG_OWNER);
-    } else {
-        /* Mark myself as finished regarding this element */
-        ucs_assert(elem->pending & iface->my_mask); /* I'm still pending (before) */
-        pending = ucs_atomic_fand64(&elem->pending, ~iface->my_mask) & ~iface->my_mask;
     }
 
-    printf("#%i SEND (%lu): Head=%lu Pending=%lu, peer_mask=%lu (is_root? %i is_first? %i)\n",
-            getpid(), length, head, pending, iface->peer_mask, is_root, is_first_elemet);
-
+    /* Mark myself as finished regarding this element */
     if (ucs_unlikely(needs_lock)) {
-        ucs_spin_unlock_alone(&elem->lock);
+        pending = elem->pending--;
+        ucs_spin_pure_unlock(&elem->lock);
+    } else {
+        pending = ucs_atomic_fadd32(&elem->pending, (uint32_t)-1);
     }
+
+    printf("#%i SEND (%lu): write_idx=%u (mode=%i, pending=%u, header=%lu flags=%i)\n",
+           getpid(), length, head, mode, pending, *(uint64_t*)base_address, elem->super.flags);
 
     /* Check if this sender is the last expected sender for this element */
-    if (ucs_unlikely(pending == coll_ep->tx_peer_mask)) {
+    if ((is_loopback) || (pending == 2 /* target + myself */)) {
         /* memory barrier - make sure that the memory is flushed before setting the
          * 'writing is complete' flag which the reader checks */
         ucs_memory_cpu_store_fence();
@@ -185,10 +227,11 @@ ucs_status_t uct_mm_coll_ep_am_short(uct_ep_h tl_ep, uint8_t id, uint64_t header
     uct_mm_coll_iface_t *iface = ucs_derived_of(tl_ep->iface, uct_mm_coll_iface_t);
     uct_mm_coll_ep_t *ep = (uct_mm_coll_ep_t*)tl_ep;
 
-    UCT_CHECK_LENGTH(length + sizeof(header), 0, iface->super.config.fifo_elem_size -
+    UCT_CHECK_LENGTH(length + sizeof(header), 0, ep->fifo_elem_size -
                      sizeof(uct_mm_coll_fifo_element_t), "am_short");
 
-    return uct_mm_coll_ep_am_common_send(UCT_MM_FIFO_ELEM_FLAG_INLINE,
+    return uct_mm_coll_ep_am_common_send(UCG_MM_COLL_SEND_PAYLOAD,
+                                         UCT_MM_FIFO_ELEM_FLAG_INLINE,
                                          UCT_MM_FIFO_ELEM_FLAG_BATCH,
                                          ep, iface, id, length,
                                          header, payload, NULL, NULL, NULL, 0);
@@ -201,7 +244,8 @@ ssize_t uct_mm_coll_ep_am_bcopy(uct_ep_h tl_ep, uint8_t id,
     uct_mm_coll_iface_t *iface = ucs_derived_of(tl_ep->iface, uct_mm_coll_iface_t);
     uct_mm_coll_ep_t *ep = (uct_mm_coll_ep_t*)tl_ep;
 
-    return uct_mm_coll_ep_am_common_send(0, UCT_MM_FIFO_ELEM_FLAG_BATCH,
+    return uct_mm_coll_ep_am_common_send(UCG_MM_COLL_SEND_PACK_CB,
+                                         0, UCT_MM_FIFO_ELEM_FLAG_BATCH,
                                          ep, iface, id, 0, 0,
                                          NULL, NULL, arg, pack_cb, flags);
 }
@@ -212,7 +256,8 @@ ssize_t uct_mm_coll_ep_am_slock(uct_ep_h tl_ep, uint8_t id,
     uct_mm_coll_iface_t *iface = ucs_derived_of(tl_ep->iface, uct_mm_coll_iface_t);
     uct_mm_coll_ep_t *ep = (uct_mm_coll_ep_t*)tl_ep;
 
-    return uct_mm_coll_ep_am_common_send(UCT_MM_FIFO_ELEM_FLAG_INLINE, 0,
+    return uct_mm_coll_ep_am_common_send(UCG_MM_COLL_SEND_LOCKING_PACK_CB,
+                                         UCT_MM_FIFO_ELEM_FLAG_INLINE, 0,
                                          ep, iface, id, 0, 0,
                                          NULL, pack_cb, arg, NULL, flags);
 }
@@ -224,9 +269,12 @@ ssize_t uct_mm_coll_ep_am_block(uct_ep_h tl_ep, uint8_t id,
     uct_mm_coll_iface_t *iface = ucs_derived_of(tl_ep->iface, uct_mm_coll_iface_t);
     uct_mm_coll_ep_t *ep = (uct_mm_coll_ep_t*)tl_ep;
 
-    return uct_mm_coll_ep_am_common_send(0, 0, ep, iface, id, 0, 0,
+    return uct_mm_coll_ep_am_common_send(UCG_MM_COLL_SEND_LOCKING_PACK_CB,
+                                         0, 0, ep, iface, id, 0, 0,
                                          NULL, pack_cb, arg, NULL, flags);
 }
+
+static void uct_mm_coll_ep_release_desc(uct_recv_desc_t *self, void *desc);
 
 static UCS_CLASS_INIT_FUNC(uct_mm_coll_ep_t, const uct_ep_params_t *params)
 {
@@ -237,15 +285,20 @@ static UCS_CLASS_INIT_FUNC(uct_mm_coll_ep_t, const uct_ep_params_t *params)
 
     UCS_CLASS_CALL_SUPER_INIT(uct_base_ep_t, &iface->super.super);
 
-    /* Create a two-way channel */
+    /* The first connection (ever) is a loopback connection */
     const uct_mm_coll_iface_addr_t *addr = (const void *)params->iface_addr;
-    uct_ep_params_t per_ep_params        = *params;
-    per_ep_params.iface_addr             = (const uct_iface_addr_t*)&addr->rx;
+    int is_loopback = (addr->coll_id == iface->my_coll_id);
+
+    /* Create a two-way channel */
+    uct_ep_params_t per_ep_params = *params;
+    per_ep_params.iface_addr = is_loopback ? (const uct_iface_addr_t*)&addr->tx:
+                                             (const uct_iface_addr_t*)&addr->rx;
     status = UCS_CLASS_NEW(uct_mm_ep_t, &self->tx, &per_ep_params);
     if (status != UCS_OK) {
         return status;
     }
-    per_ep_params.iface_addr = (const uct_iface_addr_t*)&addr->tx;
+    per_ep_params.iface_addr = is_loopback ? (const uct_iface_addr_t*)&addr->rx:
+                                             (const uct_iface_addr_t*)&addr->tx;
     status = UCS_CLASS_NEW(uct_mm_ep_t, &self->rx, &per_ep_params);
     if (status != UCS_OK) {
         UCS_CLASS_DELETE(uct_mm_ep_t, &self->tx);
@@ -255,14 +308,31 @@ static UCS_CLASS_INIT_FUNC(uct_mm_coll_ep_t, const uct_ep_params_t *params)
 
     /* Put self in the next vacant slot in the interface's list of endpoints */
     uct_mm_coll_peer_ep_t *iface_ep_slot;
-    status = uct_mm_coll_iface_get_ep(iface, UCT_MM_COLL_NO_PEER_ID, &iface_ep_slot);
-    ucs_assert(status == UCS_ERR_NO_ELEM);
+    if (is_loopback) {
+        iface_ep_slot = &iface->eps[0];
+        ucs_assert(!iface_ep_slot->ep);
+        iface_ep_slot->peer_id = UCT_MM_COLL_MY_PEER_ID;
+    } else {
+        status = uct_mm_coll_iface_get_ep(iface, UCT_MM_COLL_NO_PEER_ID, &iface_ep_slot);
+        ucs_assert(status == UCS_ERR_NO_ELEM);
+        iface_ep_slot->peer_id = addr->coll_id;
+    }
     iface_ep_slot->ep = self;
 
-    self->my_offset    = iface->my_coll_id - (uint32_t)(addr->coll_id < iface->my_coll_id);
-    self->tx_peer_mask = UCS_BIT(addr->coll_id);
-    self->tx_index     = (uint64_t)-1;
-    self->rx_index     = 0;
+    self->release_desc.super.cb = uct_mm_coll_ep_release_desc;
+    self->release_desc.ep       = self;
+    self->my_coll_id            = iface->my_coll_id;
+    self->my_offset             = iface->my_coll_id -
+                                  (uint32_t)(addr->coll_id < iface->my_coll_id);
+    self->fifo_shift            = iface->super.fifo_shift;
+    self->is_loopback           = is_loopback;
+    self->tx_cnt                = iface->sm_proc_cnt;
+    self->tx_index              = (typeof(self->tx_index)) -1;
+    self->rx_read_index         = 0;
+    self->rx_done_index         = 0;
+    self->fifo_mask             = iface->super.fifo_mask;
+    self->fifo_size             = iface->super.config.fifo_size;
+    self->fifo_elem_size        = iface->super.config.fifo_elem_size;
 
     ucs_debug("mm_coll: ep connected: %p, id: %u", self, addr->coll_id);
 
@@ -286,54 +356,88 @@ UCS_CLASS_DEFINE(uct_mm_coll_ep_t, uct_base_ep_t)
 UCS_CLASS_DEFINE_NEW_FUNC(uct_mm_coll_ep_t, uct_ep_t, const uct_ep_params_t *);
 UCS_CLASS_DEFINE_DELETE_FUNC(uct_mm_coll_ep_t, uct_ep_t);
 
-
-static inline void uct_mm_coll_progress_fifo_tail(uct_mm_coll_iface_t *iface,
-                                                  uct_mm_coll_ep_t *coll_ep)
+static UCS_F_ALWAYS_INLINE
+void uct_mm_coll_progress_fifo_tail(uct_mm_coll_iface_t *iface,
+                                    uct_mm_coll_ep_t *coll_ep)
 {
-    /* don't progress the tail every time - release in batches. improves performance */
-    if (coll_ep->rx_index & iface->super.fifo_release_factor_mask) {
+    uint64_t rx_done_index = ++coll_ep->rx_done_index;
+
+    /* If i'm the last receiver - mark this element as (re)usable again */
+    if (rx_done_index & iface->super.fifo_release_factor_mask) {
         return;
     }
 
-    coll_ep->rx->fifo_ctl->tail = coll_ep->rx_index;
+    coll_ep->rx->fifo_ctl->tail = rx_done_index;
+}
+
+static void uct_mm_coll_ep_release_desc(uct_recv_desc_t *self, void *desc)
+{
+    uct_mm_coll_recv_desc_t *rdesc = (uct_mm_coll_recv_desc_t*)self;
+    uct_mm_coll_ep_t *ep           = rdesc->ep;
+    unsigned elem_index            = ep->rx_done_index;
+
+    printf("\n\n#%i RECV4 (%u)!!!\n\n\n", getpid(), ep->rx_done_index);
+
+    /* Find the element which this descriptor belongs to - should be near... */
+    uct_mm_coll_fifo_element_t *elem;
+    do {
+        elem = UCT_MM_COLL_IFACE_GET_FIFO_ELEM(ep, ep->rx->fifo,
+                (elem_index++ & ep->fifo_mask));
+
+        printf("#%i RECV4 [%u -> %u]: base=%p base+offset=%p desc=%p\n",
+                getpid(), elem_index - 1, ep->rx_read_index,
+                elem->super.desc_chunk_base_addr,
+                elem->super.desc_chunk_base_addr + elem->super.desc_offset,
+                desc);
+
+        ucs_assert(elem_index <= ep->rx_read_index);
+    } while (elem->super.desc_chunk_base_addr != desc);
+
+    /* Mark this element as handled (by me, at least) */
+    UCT_MM_COLL_IFACE_RESET_FIFO_ELEM(elem, 0); // TODO: Fix?
+
+    /* Check if this element has been released by all peers and can be re-used */
+    if (--elem_index == ep->rx_done_index) {
+        uct_mm_coll_iface_t *iface = (uct_mm_coll_iface_t*)ep->super.super.iface;
+        while ((elem->pending == 0) && (elem_index < ep->rx_read_index)) {
+            elem->super.length = 0;
+            uct_mm_coll_progress_fifo_tail(iface, ep);
+            elem = UCT_MM_COLL_IFACE_GET_FIFO_ELEM(ep, ep->rx->fifo,
+                    (elem_index++ & ep->fifo_mask));
+        }
+    }
+
+    /* Return this segment to the pool */
+    void *mm_desc = desc - sizeof(uct_mm_recv_desc_t);
+    ucs_mpool_put(mm_desc);
 }
 
 /**
  * This function serves two purposes:
  * ep == NULL : Check for incoming messages on
  */
-static inline unsigned uct_mm_coll_iface_poll_fifo(uct_mm_coll_iface_t *iface,
-                                                   uct_mm_coll_ep_t *coll_ep,
-                                                   int is_incast)
+static UCS_F_ALWAYS_INLINE
+unsigned uct_mm_coll_iface_poll_fifo(uct_mm_coll_iface_t *iface,
+                                     uct_mm_coll_ep_t *coll_ep,
+                                     int is_loopback /* compile-time */)
 {
-    /* check the memory pool to make sure that there is a new descriptor available */
-    if (ucs_unlikely(iface->super.last_recv_desc == NULL)) {
-        UCT_TL_IFACE_GET_RX_DESC(&iface->super.super, &iface->super.recv_desc_mp,
-                                 iface->super.last_recv_desc, return 0);
-    }
-
     uct_mm_ep_t *ep         = coll_ep->rx; /* Look at the remote peer's bcast */
-    uint64_t read_index     = coll_ep->rx_index;
-    uint64_t read_index_loc = (read_index & iface->super.fifo_mask);
+    unsigned read_index     = coll_ep->rx_read_index;
+    unsigned read_index_loc = (read_index & coll_ep->fifo_mask);
 
     /* the fifo_element which the read_index points to */
-    uct_mm_coll_fifo_element_t *read_index_elem = (uct_mm_coll_fifo_element_t*)
-            UCT_MM_IFACE_GET_FIFO_ELEM(&iface->super, ep->fifo, read_index_loc);
+    uct_mm_coll_fifo_element_t *read_index_elem =
+            UCT_MM_COLL_IFACE_GET_FIFO_ELEM(coll_ep, ep->fifo, read_index_loc);
 
     /* check the read_index to see if there is a new item to read (checking the owner bit) */
-    if ((read_index_elem->pending == 0) ||
-        (((read_index >> iface->super.fifo_shift) & 1) !=
-         ((read_index_elem->super.flags) & UCT_MM_FIFO_ELEM_FLAG_OWNER))) {
+    if (((read_index >> coll_ep->fifo_shift) & 1) !=
+        ((read_index_elem->super.flags) & UCT_MM_FIFO_ELEM_FLAG_OWNER)) {
         return 0;
     }
+    ucs_assert(read_index_elem->pending != 0);
 
     /* read from read_index_elem */
     ucs_memory_cpu_load_fence();
-
-    /* Make sure it's not a message I broadcasted... */
-    if ((read_index_elem->pending & iface->my_mask) == 0) {
-        return 0;
-    }
 
     /* Detect incoming message parameters */
     uint8_t am_id       = read_index_elem->super.am_id;
@@ -341,33 +445,44 @@ static inline unsigned uct_mm_coll_iface_poll_fifo(uct_mm_coll_iface_t *iface,
     size_t length       = read_index_elem->super.length;
     int is_short        = flags & UCT_MM_FIFO_ELEM_FLAG_INLINE;
     unsigned batch_flag = flags & UCT_MM_FIFO_ELEM_FLAG_BATCH;
-    void *base_address  = UCT_MM_COLL_GET_BASE_ADDRESS(is_short, !is_incast,
-            batch_flag, length, read_index_elem, coll_ep, iface, 1);
+    void *base_address  = UCT_MM_COLL_GET_BASE_ADDRESS(is_short, batch_flag,
+            length, read_index_elem, coll_ep, iface, is_loopback, 1);
 
-    printf("#%i RECV (%lu): rx_idx=%lu Pending (%lu) contains my_mask (%lu) (is_root? %i)\n",
-           getpid(), length, read_index_loc, read_index_elem->pending, iface->my_mask, !is_incast);
+    if (coll_ep->rx_read_index < (coll_ep->rx_done_index + 3))
+    printf("#%i RECV (%lu): header=%lu read_idx=%u pending=%u done_idx=%u "
+            "(is_loopback? %i short? %i batch? %i)\n", getpid(), length,
+            *(uint64_t*)base_address, coll_ep->rx_read_index, read_index_elem->pending,
+           coll_ep->rx_done_index, is_loopback, is_short, batch_flag);
 
     /* Process the incoming message */
-    ucs_status_t status = uct_mm_iface_invoke_am(&iface->super,
+    ucs_status_t status = uct_iface_invoke_am(&iface->super.super,
             am_id, base_address, length, batch_flag);
-    if (status == UCS_INPROGRESS) {
+
+    if (ucs_unlikely(status == UCS_INPROGRESS)) {
+        void *desc = (void *)((uintptr_t)base_address - iface->super.rx_headroom);
+printf("#%i RECV2 (%lu): status=%i is_loopback=%i\n", getpid(), length, status, is_loopback);
         ucs_assert(!is_short);
 
-        /* assign a new receive descriptor to this FIFO element.*/
-        uct_mm_assign_desc_to_fifo_elem(&iface->super, &read_index_elem->super, 0);
+        /* save the release_desc for later release of this desc */
+        uct_recv_desc(desc) = (uct_recv_desc_t*)&coll_ep->release_desc;
 
-        /* the last_recv_desc is in use. get a new descriptor for it */
-        UCT_TL_IFACE_GET_RX_DESC(&iface->super.super, &iface->super.recv_desc_mp,
-                iface->super.last_recv_desc, ucs_debug("recv mpool is empty"));
+        /* If I'm the owner of this memory - I can replace the element's segment */
+        if (is_loopback) {
+            /* assign a new receive descriptor to this FIFO element.*/
+            uct_mm_assign_desc_to_fifo_elem(&iface->super, &read_index_elem->super, 1);
+        }
+    } else {
+        if ((is_loopback) ||
+            (ucs_atomic_fadd32(&read_index_elem->pending, (uint32_t)-1) == 1)) {
+            /* Mark element as done (and re-usable) */
+            UCT_MM_COLL_IFACE_RESET_FIFO_ELEM(read_index_elem, is_loopback);
+            if (ucs_likely(coll_ep->rx_done_index == coll_ep->rx_read_index)) {
+                uct_mm_coll_progress_fifo_tail(iface, coll_ep);
+            }
+        }
     }
 
-    /* Raise the (remote) read_index */
-    coll_ep->rx_index++;
-
-    if (ucs_atomic_fand64(&read_index_elem->pending, ~iface->my_mask) == iface->my_mask) {
-        /* If i'm the last receiver - mark this element as (re)usable again */
-        uct_mm_coll_progress_fifo_tail(iface, coll_ep);
-    }
+    coll_ep->rx_read_index++;
 
     if (is_short) {
         uct_iface_trace_am(&iface->super.super, UCT_AM_TRACE_TYPE_RECV,
@@ -382,20 +497,22 @@ static inline unsigned uct_mm_coll_iface_poll_fifo(uct_mm_coll_iface_t *iface,
 
 unsigned uct_mm_coll_iface_progress(void *arg)
 {
-    int is_incast = 0;
     unsigned count = 0;
     uct_mm_coll_iface_t *iface = arg;
     uct_mm_coll_peer_ep_t *iter = iface->eps;
-    uct_mm_coll_ep_t *next_ep = iter->ep;
+    uct_mm_coll_ep_t *next_ep = (iter++)->ep;
 
-    do { /* One (loop-back) endpoint is always present */
-        while (uct_mm_coll_iface_poll_fifo(iface, next_ep, is_incast)) {
+    while (uct_mm_coll_iface_poll_fifo(iface, next_ep, 1)) {
+        count++;
+    }
+
+    while ((next_ep = iter->ep) != NULL) {
+        ucs_assert(iter->peer_id != iface->my_coll_id); // TODO: my_coll_id is local...
+        while (uct_mm_coll_iface_poll_fifo(iface, next_ep, 0)) {
             count++;
         }
         iter++;
-        next_ep = iter->ep;
-        is_incast = 1;
-    } while (next_ep);
+    }
 
     /* progress the pending sends (if there are any) */
     ucs_arbiter_dispatch(&iface->super.arbiter, 1, uct_mm_ep_process_pending, NULL);

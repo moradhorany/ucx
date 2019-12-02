@@ -268,7 +268,7 @@ typedef size_t (*uct_pack_callback_t)(void *dest, void *arg);
  * @return  Size of the data was actually produced.
  */
 typedef size_t (*uct_locked_pack_callback_t)(void *dest,
-                                             ucs_spinlock_t *lock,
+                                             ucs_spinlock_pure_t *lock,
                                              void *arg);
 
 

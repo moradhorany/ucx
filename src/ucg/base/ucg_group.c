@@ -530,7 +530,8 @@ ucs_status_t ucg_plan_connect(ucg_group_h group, ucg_group_member_index_t idx,
         *md_attr_p = &iface->md_attr;
 
         /* check for the loopback case (currently only applies to SM collectives) */
-        if (flags & UCG_PLAN_CONNECT_FLAG_ASK_LOOPBACK) {
+        if ((flags & UCG_PLAN_CONNECT_FLAG_ASK_LOOPBACK) ||
+            (idx == iface->my_coll_id /* TODO: my_coll_id is local... */ )) {
             idx = UCT_MM_COLL_MY_PEER_ID;
         }
 

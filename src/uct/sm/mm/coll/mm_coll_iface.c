@@ -68,6 +68,21 @@ static ucs_status_t uct_mm_coll_iface_query(uct_iface_h tl_iface,
     return UCS_OK;
 }
 
+ucs_status_t uct_mm_coll_ep_pending_add(uct_ep_h tl_ep, uct_pending_req_t *n,
+                                        unsigned flags)
+{
+    uct_mm_coll_ep_t *ep = ucs_derived_of(tl_ep, uct_mm_coll_ep_t);
+    return uct_mm_ep_pending_add((uct_ep_h)ep->tx, n, flags);
+}
+
+ucs_status_t uct_mm_coll_ep_flush(uct_ep_h tl_ep, unsigned flags,
+                                  uct_completion_t *comp)
+{
+    uct_mm_coll_ep_t *ep = ucs_derived_of(tl_ep, uct_mm_coll_ep_t);
+    return uct_mm_ep_flush((uct_ep_h)ep->tx, flags, comp);
+}
+
+
 static UCS_CLASS_DECLARE_DELETE_FUNC(uct_mm_coll_iface_t, uct_iface_t);
 
 static uct_iface_ops_t uct_mm_coll_iface_ops = {
@@ -75,9 +90,9 @@ static uct_iface_ops_t uct_mm_coll_iface_ops = {
     .ep_am_bcopy              = uct_mm_coll_ep_am_bcopy,
     .ep_am_slock              = uct_mm_coll_ep_am_slock,
     .ep_am_block              = uct_mm_coll_ep_am_block,
-    .ep_pending_add           = uct_mm_ep_pending_add,
+    .ep_pending_add           = uct_mm_coll_ep_pending_add,
     .ep_pending_purge         = uct_mm_ep_pending_purge,
-    .ep_flush                 = uct_mm_ep_flush,
+    .ep_flush                 = uct_mm_coll_ep_flush,
     .ep_fence                 = uct_sm_ep_fence,
     .ep_create                = UCS_CLASS_NEW_FUNC_NAME(uct_mm_coll_ep_t),
     .ep_destroy               = UCS_CLASS_DELETE_FUNC_NAME(uct_mm_coll_ep_t),
@@ -112,6 +127,15 @@ static UCS_CLASS_INIT_FUNC(uct_mm_coll_iface_t, uct_md_h md, uct_worker_h worker
     ucs_status_t status;
     uct_mm_coll_fifo_element_t* fifo_elem_p;
 
+    /* check the value defining the size of the FIFO element */
+    uct_mm_iface_config_t *mm_config = ucs_derived_of(tl_config, uct_mm_iface_config_t);
+    if (mm_config->super.max_short <= sizeof(uct_mm_coll_fifo_element_t)) {
+        ucs_error("The UCT_MM_MAX_SHORT parameter must be larger than the FIFO "
+                  "element header size. ( > %ld bytes).",
+                  sizeof(uct_mm_coll_fifo_element_t));
+        return UCS_ERR_INVALID_PARAM;
+    }
+
     /* No need (or way) to initialize anything if no information is given */
     if (!(params->field_mask & UCT_IFACE_PARAM_FIELD_COLL_INFO)) {
         self->super.super.super.ops.iface_query = uct_mm_coll_iface_query_empty;
@@ -138,18 +162,22 @@ static UCS_CLASS_INIT_FUNC(uct_mm_coll_iface_t, uct_md_h md, uct_worker_h worker
     for (i = 0; i < self->super.config.fifo_size; i++) {
         /* Initialize the recv-FIFO */
         fifo_elem_p = UCT_MM_COLL_IFACE_GET_FIFO_ELEM(self, &self->super, i);
+        ucs_assert(fifo_elem_p->super.flags & UCT_MM_FIFO_ELEM_FLAG_OWNER);
+        fifo_elem_p->super.length = 0;
         fifo_elem_p->pending = 0;
 
-        status = ucs_spinlock_sm_init(&fifo_elem_p->lock);
+        status = ucs_spinlock_pure_init(&fifo_elem_p->lock, 1);
         if (status != UCS_OK) {
             return status;
         }
 
         /* Initialize the send-FIFO */
         fifo_elem_p = UCT_MM_COLL_IFACE_GET_FIFO_ELEM(self, &self->bcast, i);
+        ucs_assert(fifo_elem_p->super.flags & UCT_MM_FIFO_ELEM_FLAG_OWNER);
+        fifo_elem_p->super.length = 0;
         fifo_elem_p->pending = 0;
 
-        status = ucs_spinlock_sm_init(&fifo_elem_p->lock);
+        status = ucs_spinlock_pure_init(&fifo_elem_p->lock, 1);
         if (status != UCS_OK) {
             return status;
         }
@@ -162,15 +190,12 @@ static UCS_CLASS_INIT_FUNC(uct_mm_coll_iface_t, uct_md_h md, uct_worker_h worker
     }
 
     /* Fill-in interface fields */
+    self->my_coll_id            = params->node_info.proc_idx;
+    self->sm_proc_cnt           = params->node_info.proc_cnt;
     size_t eps_size             = (params->node_info.proc_cnt + 1) *
                                   sizeof(uct_mm_coll_peer_ep_t);
     self->eps                   = UCS_ALLOC_CHECK(eps_size, "mm_coll_ep_slots");
     memset(self->eps, 0, eps_size);
-
-    self->my_coll_id            = params->node_info.proc_idx;
-    self->sm_proc_cnt           = params->node_info.proc_cnt - 1;
-    self->my_mask               = UCS_BIT(params->node_info.proc_idx);
-    self->peer_mask             = UCS_MASK(params->node_info.proc_cnt) & ~self->my_mask;
 
     /* Prepare the loop-back address */
     uint64_t sm_dev_addr;
@@ -181,11 +206,6 @@ static UCS_CLASS_INIT_FUNC(uct_mm_coll_iface_t, uct_md_h md, uct_worker_h worker
     status = uct_mm_coll_iface_get_address((uct_iface_t*)self,
                                            (uct_iface_addr_t*)&my_addr);
     ucs_assert(status == UCS_OK);
-    uct_mm_coll_iface_addr_t bcast_addr = {
-            .rx      = my_addr.tx,
-            .tx      = my_addr.rx,
-            .coll_id = my_addr.coll_id
-    };
 
     /* Connect the loop-back endpoint */
     uct_ep_params_t bcast_params = {
@@ -194,17 +214,14 @@ static UCS_CLASS_INIT_FUNC(uct_mm_coll_iface_t, uct_md_h md, uct_worker_h worker
                           UCT_EP_PARAM_FIELD_IFACE_ADDR,
             .iface      = (uct_iface_h)self,
             .dev_addr   = (uct_device_addr_t*)&sm_dev_addr,
-            .iface_addr = (uct_iface_addr_t*)&bcast_addr
+            .iface_addr = (uct_iface_addr_t*)&my_addr
     };
-    self->eps[0].peer_id = UCT_MM_COLL_MY_PEER_ID;
+
     status = uct_mm_coll_iface_ops.ep_create(&bcast_params,
             (uct_ep_t**)&self->eps[0].ep);
     if (status != UCS_OK) {
         return status;
     }
-
-    /* Only for the bcast endpoint - transfer ownership on (pending == 0) */
-    self->eps[0].ep->tx_peer_mask = self->peer_mask;
 
     ucs_debug("Created an MM_COLL iface. FIFO mm id: %zu , coll info: %u/%u",
               self->super.fifo_mm_id, params->node_info.proc_idx,
@@ -220,11 +237,11 @@ static UCS_CLASS_CLEANUP_FUNC(uct_mm_coll_iface_t)
     for (i = 0; i < self->super.config.fifo_size; i++) {
         /* Destroy the recv-FIFO */
         fifo_elem_p = UCT_MM_COLL_IFACE_GET_FIFO_ELEM(self, &self->super, i);
-        ucs_spinlock_destroy(&fifo_elem_p->lock);
+        ucs_spinlock_pure_destroy(&fifo_elem_p->lock);
 
         /* Destroy the send-FIFO */
         fifo_elem_p = UCT_MM_COLL_IFACE_GET_FIFO_ELEM(self, &self->bcast, i);
-        ucs_spinlock_destroy(&fifo_elem_p->lock);
+        ucs_spinlock_pure_destroy(&fifo_elem_p->lock);
     }
 
     UCS_CLASS_CLEANUP(uct_mm_iface_t, &self->bcast);

@@ -54,6 +54,7 @@ static inline ucs_status_t ucg_builtin_tree_connect_phase(ucg_builtin_plan_phase
         ucg_group_member_index_t peer = peers[0];
         if (sm_coll_flags & (UCG_PLAN_CONNECT_FLAG_ASK_INCAST |
                              UCG_PLAN_CONNECT_FLAG_ASK_BCAST)) {
+            phase->ep_cnt = 1;
             phase->flags |= UCG_PLAN_FLAG_NEEDS_LOCKING;
 
             /* For some methods, e.g. REDUCE_TERMINAL, the peer is the message

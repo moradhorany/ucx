@@ -122,9 +122,7 @@ ucg_builtin_step_send_flags(ucg_builtin_op_step_t *step,
 {
     size_t length    = step->buffer_length;
     size_t dt_len    = params->send.dt_len;
-    size_t batch_len = phase->sm_cnt *
-            ucs_align_up(length + sizeof(ucg_builtin_header_t),
-                         UCS_SYS_CACHE_LINE_SIZE);
+    size_t batch_len = phase->sm_cnt * length;
 
     /*
      * Short messages (e.g. RDMA "inline")
@@ -177,6 +175,8 @@ ucg_builtin_step_send_flags(ucg_builtin_op_step_t *step,
      * Medium messages
      */
     } else if (ucs_likely(length <= phase->max_bcopy_one)) {
+        batch_len = phase->sm_cnt * ucs_align_up(length, UCS_SYS_CACHE_LINE_SIZE);
+
         /* BCopy send - single message */
         *send_flag            = ((phase->flags & UCG_PLAN_FLAG_NEEDS_LOCKING) &&
                                  (batch_len > phase->max_bcopy_one) &&

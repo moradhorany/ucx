@@ -761,9 +761,15 @@ UCS_PROFILE_FUNC(ucs_status_t, ucg_builtin_step_execute, (req, user_req),
             ucs_list_del(&desc->super.tag_list[0]);
 
             /* Handle this "waiting" packet, possibly completing the step */
-            int is_step_done = step->recv_cb(&slot->req,
-                    desc->header.remote_offset, &desc->data[0],
-                    desc->super.length);
+            int is_step_done, is_batch = desc->super.flags & UCT_CB_PARAM_FLAG_BATCH;
+            char *desc_data = &desc->data[0];
+            size_t desc_len = desc->super.length;
+            do {
+                is_step_done = step->recv_cb(&slot->req,
+                        desc->header.remote_offset, desc_data, desc_len);
+                desc_data += desc_len;
+                // TODO: consider incrementing offset too in some cases
+            } while (!is_batch || is_step_done);
 
             /* Dispose of the packet, according to its allocation */
             if (desc->super.flags == UCT_CB_PARAM_FLAG_DESC) {
