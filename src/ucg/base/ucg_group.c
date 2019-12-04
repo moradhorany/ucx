@@ -398,16 +398,16 @@ void ucg_collective_destroy(ucg_coll_h coll)
     ucg_discard((ucg_op_t*)coll);
 }
 
-static ucs_status_t ucg_worker_groups_find_mm_coll_tl_id(ucp_worker_h worker,
-        ucp_rsc_index_t *mm_coll_tl_id)
+static ucs_status_t ucg_worker_groups_find_tl_id(ucp_worker_h worker,
+        ucp_rsc_index_t *tl_id, const char *tl_name)
 {
     ucp_context_h context = worker->context;
 
     ucp_rsc_index_t tl_id;
     ucs_for_each_bit(tl_id, context->tl_bitmap) {
         ucp_tl_resource_desc_t *resource = &context->tl_rscs[tl_id];
-        if (!strcmp(resource->tl_rsc.tl_name, UCT_MM_COLL_TL_NAME)) {
-            *mm_coll_tl_id = tl_id;
+        if (!strcmp(resource->tl_rsc.tl_name, tl_name)) {
+            *tl_id = tl_id;
             return UCS_OK;
         }
     }
@@ -428,7 +428,13 @@ static ucs_status_t ucg_worker_groups_init(ucp_worker_h worker,
         return status;
     }
 
-    status = ucg_worker_groups_find_mm_coll_tl_id(worker, &gctx->mm_coll_tl_id);
+    status = ucg_worker_groups_find_tl_id(worker, &gctx->mm_coll_tl_id, UCT_MM_COLL_TL_NAME);
+    if (status != UCS_OK) {
+        ucg_plan_release_list(gctx->planners, gctx->num_planners);
+        return status;
+    }
+
+    status = ucg_worker_groups_find_tl_id(worker, &gctx->ud_comet_tl_id, UCT_UD_COMET_TL_NAME);
     if (status != UCS_OK) {
         ucg_plan_release_list(gctx->planners, gctx->num_planners);
         return status;
@@ -502,6 +508,81 @@ ucs_status_t ucg_init(const ucg_params_t *params,
     return status;
 }
 
+ucs_status_t ucg_plan_connect_sm(ucg_group_h group, ucg_group_member_index_t idx,
+        enum ucg_plan_connect_flags flags, uint16_t *sm_cnt,
+        uct_ep_h *ep_p, const uct_iface_attr_t **ep_attr_p,
+        uct_md_h *md_p, const uct_md_attr_t    **md_attr_p)
+{
+    /* Connect using the shared-memory collectives interface */
+    uct_iface_h uct_iface      = ucp_worker_iface(group->worker,
+                                                  gctx->mm_coll_tl_id)->iface;
+    uct_mm_coll_iface_t *iface = ucs_derived_of(ucs_derived_of(uct_iface,
+            uct_mm_iface_t), uct_mm_coll_iface_t);
+    UCG_GROUP_PROGRESS_ADD(uct_iface, group);
+    UCG_GROUP_PROGRESS_ADD(uct_iface, gctx);
+
+    *sm_cnt    = iface->sm_proc_cnt;
+    *ep_attr_p = ucp_worker_iface_get_attr(group->worker, gctx->mm_coll_tl_id);
+    *md_p      = iface->super.super.md;
+    *md_attr_p = &iface->md_attr;
+
+    /* check for the loopback case (currently only applies to SM collectives) */
+    if (idx == iface->my_coll_id) {
+        idx = UCT_MM_COLL_MY_PEER_ID;
+    }
+
+    /* Try to find an existing connection to that destination */
+    status = uct_mm_coll_iface_get_ep(iface, idx, &iface_ep_slot);
+    if (status == UCS_OK) {
+        *ep_p = (uct_ep_h)iface_ep_slot->ep;
+        ucs_assert(*ep_p != NULL);
+        return UCS_OK;
+    }
+
+    return UCS_ERR_NO_ELEM;
+}
+
+ucs_status_t ucg_plan_connect_net(ucg_group_h group, ucg_group_member_index_t idx,
+        enum ucg_plan_connect_flags flags, uint16_t *sm_cnt,
+        uct_ep_h *ep_p, const uct_iface_attr_t **ep_attr_p,
+        uct_md_h *md_p, const uct_md_attr_t    **md_attr_p)
+{
+    /* Find out how many nodes share a host... */
+    uct_iface_h uct_iface      = ucp_worker_iface(group->worker,
+                                                  gctx->mm_coll_tl_id)->iface;
+    uct_mm_coll_iface_t *iface = ucs_derived_of(ucs_derived_of(uct_iface,
+                                                               uct_mm_iface_t),
+                                                uct_mm_coll_iface_t);
+    *sm_cnt                    = iface->sm_proc_cnt;
+
+    /* Connect using the COMET offload interface */
+    uct_iface = ucp_worker_iface(group->worker, gctx->ud_comet_tl_id)->iface;
+    iface = ucs_derived_of(ucs_derived_of(uct_iface, uct_ud_iface_t), uct_ud_comet_iface_t);
+    UCG_GROUP_PROGRESS_ADD(uct_iface, group);
+    UCG_GROUP_PROGRESS_ADD(uct_iface, gctx);
+
+    *sm_cnt    = group->params.member_count / *sm_cnt;
+    *ep_attr_p = ucp_worker_iface_get_attr(group->worker, gctx->ud_comet_tl_id);
+    *md_p      = iface->super.super.md;
+    *md_attr_p = &iface->md_attr;
+
+    /* check for the loopback case (currently only applies to SM collectives) */
+    if ((flags & UCG_PLAN_CONNECT_FLAG_ASK_LOOPBACK) ||
+        (idx == iface->my_coll_id /* TODO: my_coll_id is local... */ )) {
+        idx = UCT_MM_COLL_MY_PEER_ID;
+    }
+
+    /* Try to find an existing connection to that destination */
+    status = uct_ud_comet_iface_get_ep(iface, idx, &iface_ep_slot);
+    if (status == UCS_OK) {
+        *ep_p = (uct_ep_h)iface_ep_slot->ep;
+        ucs_assert(*ep_p != NULL);
+        return UCS_OK;
+    }
+
+    return UCS_ERR_NO_ELEM;
+}
+
 ucs_status_t ucg_plan_connect(ucg_group_h group, ucg_group_member_index_t idx,
         enum ucg_plan_connect_flags flags, uint16_t *sm_cnt,
         uct_ep_h *ep_p, const uct_iface_attr_t **ep_attr_p,
@@ -514,35 +595,24 @@ ucs_status_t ucg_plan_connect(ucg_group_h group, ucg_group_member_index_t idx,
     uct_mm_coll_peer_ep_t *iface_ep_slot = NULL;
     ucg_groups_t *gctx = UCG_WORKER_TO_GROUPS_CTX(group->worker);
 
-    if ((flags & UCG_PLAN_CONNECT_FLAG_ASK_INCAST) ||
-        (flags & UCG_PLAN_CONNECT_FLAG_ASK_BCAST)) {
-        /* Connect using the shared-memory collectives interface */
-        uct_iface_h uct_iface      = ucp_worker_iface(group->worker,
-                                                      gctx->mm_coll_tl_id)->iface;
-        uct_mm_coll_iface_t *iface = ucs_derived_of(ucs_derived_of(uct_iface,
-                uct_mm_iface_t), uct_mm_coll_iface_t);
-        UCG_GROUP_PROGRESS_ADD(uct_iface, group);
-        UCG_GROUP_PROGRESS_ADD(uct_iface, gctx);
+    if (flags & (UCG_PLAN_CONNECT_FLAG_ASK_INCAST |
+                 UCG_PLAN_CONNECT_FLAG_ASK_BCAST)) {
+        /* Detect the distance to the destiantion */
+        switch (group->params.distance[idx]) {
+        UCG_GROUP_MEMBER_DISTANCE_SELF, // TODO:
+        case UCG_GROUP_MEMBER_DISTANCE_SOCKET:
+        case UCG_GROUP_MEMBER_DISTANCE_HOST:
+            status = ucg_plan_connect_sm();
+            break;
 
-        *sm_cnt    = iface->sm_proc_cnt;
-        *ep_attr_p = ucp_worker_iface_get_attr(group->worker, gctx->mm_coll_tl_id);
-        *md_p      = iface->super.super.md;
-        *md_attr_p = &iface->md_attr;
-
-        /* check for the loopback case (currently only applies to SM collectives) */
-        if ((flags & UCG_PLAN_CONNECT_FLAG_ASK_LOOPBACK) ||
-            (idx == iface->my_coll_id /* TODO: my_coll_id is local... */ )) {
-            idx = UCT_MM_COLL_MY_PEER_ID;
+        case UCG_GROUP_MEMBER_DISTANCE_NET:
+            status = ucg_plan_connect_net()
+            break;
         }
 
-        /* Try to find an existing connection to that destination */
-        status = uct_mm_coll_iface_get_ep(iface, idx, &iface_ep_slot);
-        if (status == UCS_OK) {
-            *ep_p = (uct_ep_h)iface_ep_slot->ep;
-            ucs_assert(*ep_p != NULL);
-            return UCS_OK;
+        if (status != UCS_ERR_NO_ELEM) {
+            return status;
         }
-        ucs_assert(status == UCS_ERR_NO_ELEM);
     } else {
         *sm_cnt = 0;
     }
@@ -583,8 +653,9 @@ ucs_status_t ucg_plan_connect(ucg_group_h group, ucg_group_member_index_t idx,
         iter = kh_put(ucg_group_ep, &gctx->eps, idx, &ret);
         kh_value(&gctx->eps, iter) = ucp_ep;
 
-        if ((flags & UCG_PLAN_CONNECT_FLAG_ASK_INCAST) ||
-            (flags & UCG_PLAN_CONNECT_FLAG_ASK_BCAST)) {
+        if ((group->params.distance[idx] < UCG_GROUP_MEMBER_DISTANCE_NET) &&
+            ((flags & (UCG_PLAN_CONNECT_FLAG_ASK_INCAST |
+                       UCG_PLAN_CONNECT_FLAG_ASK_BCAST)) {
             *ep_p = ucp_ep_get_smcoll_uct_ep(ucp_ep);
             iface_ep_slot->ep = (uct_mm_coll_ep_t*)*ep_p;
             iface_ep_slot->peer_id = idx;

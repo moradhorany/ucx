@@ -63,8 +63,15 @@ static inline ucs_status_t ucg_builtin_tree_connect_phase(ucg_builtin_plan_phase
                  (method != UCG_PLAN_METHOD_SEND_TERMINAL)) ||
                 ((sm_coll_flags & UCG_PLAN_CONNECT_FLAG_ASK_BCAST) &&
                  (method != UCG_PLAN_METHOD_RECV_TERMINAL))) {
-                sm_coll_flags |= UCG_PLAN_CONNECT_FLAG_ASK_LOOPBACK;
                 peer = params->root; /* Should be myself... TODO: validate! */
+
+
+
+                // TODO: replace UCG_PLAN_CONNECT_FLAG_ASK_LOOPBACK with a flag
+                for shared-memory and a flag for network (so it can be both?!)
+
+
+
             }
         }
 
