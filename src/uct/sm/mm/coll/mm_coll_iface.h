@@ -31,8 +31,7 @@ typedef struct uct_mm_coll_fifo_element {
 typedef struct uct_mm_coll_ep uct_mm_coll_ep_t;
 
 typedef struct uct_mm_coll_peer_ep {
-#define UCT_MM_COLL_MY_PEER_ID ((uint64_t)-1)
-#define UCT_MM_COLL_NO_PEER_ID ((uint64_t)-2)
+#define UCT_MM_COLL_NO_PEER_ID ((uint64_t)-1)
     uint64_t          peer_id;
     uct_mm_coll_ep_t *ep;
 } uct_mm_coll_peer_ep_t;

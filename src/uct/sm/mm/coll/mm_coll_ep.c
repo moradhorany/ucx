@@ -309,12 +309,11 @@ static UCS_CLASS_INIT_FUNC(uct_mm_coll_ep_t, const uct_ep_params_t *params)
     if (is_loopback) {
         iface_ep_slot = &iface->eps[0];
         ucs_assert(!iface_ep_slot->ep);
-        iface_ep_slot->peer_id = UCT_MM_COLL_MY_PEER_ID;
     } else {
         status = uct_mm_coll_iface_get_ep(iface, UCT_MM_COLL_NO_PEER_ID, &iface_ep_slot);
         ucs_assert(status == UCS_ERR_NO_ELEM);
-        iface_ep_slot->peer_id = addr->coll_id;
     }
+    iface_ep_slot->peer_id = addr->coll_id;
     iface_ep_slot->ep = self;
 
     self->release_desc.super.cb = uct_mm_coll_ep_release_desc;
