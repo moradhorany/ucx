@@ -455,8 +455,11 @@ unsigned uct_mm_coll_iface_poll_fifo(uct_mm_coll_iface_t *iface,
             /* Mark element as done (and re-usable) */
             UCT_MM_COLL_IFACE_RESET_FIFO_ELEM_DONE(coll_ep, elem, is_loopback);
         } else {
-            /* later release of this desc - the hard way... */
-            uct_recv_desc(desc) = (uct_recv_desc_t*)&coll_ep->release_desc;
+        	size_t release_desc_offset = offsetof(uct_mm_coll_ep_t, release_desc);
+
+        	/* later release of this desc - the hard way... */
+        	uct_recv_desc(desc) = (uct_recv_desc_t *)((uint8_t *)coll_ep + release_desc_offset);
+            //uct_recv_desc(desc) = (uct_recv_desc_t *)&(coll_ep->release_desc);
         }
     } else {
         if ((is_loopback) ||
