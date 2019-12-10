@@ -118,7 +118,10 @@ static void uct_ud_mlx5_ep_tx_ctl_skb(uct_ud_ep_t *ud_ep, uct_ud_send_skb_t *skb
     }
 }
 
-static UCS_F_NOINLINE void
+#if !defined(HAVE_COMET_HW_UD)
+static
+#endif
+UCS_F_NOINLINE void
 uct_ud_mlx5_iface_post_recv(uct_ud_mlx5_iface_t *iface)
 {
     unsigned batch = iface->super.super.config.rx_max_batch;
@@ -691,7 +694,10 @@ static void uct_ud_mlx5_iface_handle_failure(uct_ib_iface_t *ib_iface, void *arg
     }
 }
 
-static uct_ud_iface_ops_t uct_ud_mlx5_iface_ops = {
+#if !defined(HAVE_COMET_HW_UD) // Need to re-use these ops in COMET
+static
+#endif
+uct_ud_iface_ops_t uct_ud_mlx5_iface_ops = {
     {
     {
     .ep_put_short             = uct_ud_mlx5_ep_put_short,
@@ -733,7 +739,10 @@ static uct_ud_iface_ops_t uct_ud_mlx5_iface_ops = {
     .ep_free                  = UCS_CLASS_DELETE_FUNC_NAME(uct_ud_mlx5_ep_t)
 };
 
-static UCS_CLASS_INIT_FUNC(uct_ud_mlx5_iface_t,
+#if !defined(HAVE_COMET_HW_UD) // Need to re-use these ops in COMET
+static
+#endif
+UCS_CLASS_INIT_FUNC(uct_ud_mlx5_iface_t,
                            uct_md_h md, uct_worker_h worker,
                            const uct_iface_params_t *params,
                            const uct_iface_config_t *tl_config)

@@ -967,4 +967,4 @@ UCS_TEST_P(test_ud, ctls_loss) {
 
 _UCT_INSTANTIATE_TEST_CASE(test_ud, ud)
 _UCT_INSTANTIATE_TEST_CASE(test_ud, ud_mlx5)
-
+_UCT_INSTANTIATE_TEST_CASE(test_ud, ud_comet)

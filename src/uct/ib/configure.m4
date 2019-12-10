@@ -227,6 +227,10 @@ AS_IF([test "x$with_ib" = "xyes"],
               AS_IF([test "x$has_get_av" = "xyes"],
                  [AC_DEFINE([HAVE_MLX5_HW_UD], 1, [mlx5 UD bare-metal support])])])
 
+       AS_IF([test "x$with_comet_hw" = "xyes"],
+             [AC_MSG_NOTICE([Compiling with comet bare-metal support])
+              AC_DEFINE([HAVE_COMET_HW_UD], 1, [comet UD bare-metal support])])
+
        AC_CHECK_DECLS([IBV_LINK_LAYER_INFINIBAND,
                        IBV_LINK_LAYER_ETHERNET,
                        IBV_EVENT_GID_CHANGE,
@@ -403,6 +407,7 @@ AM_CONDITIONAL([HAVE_MLX5_HW], [test "x$with_mlx5_hw" != xno])
 AM_CONDITIONAL([HAVE_MLX5_DV], [test "x$with_mlx5_dv" != xno])
 AM_CONDITIONAL([HAVE_MLX5_HW_UD], [test "x$with_mlx5_hw" != xno -a "x$has_get_av" != xno])
 AM_CONDITIONAL([HAVE_IBV_EX_HW_TM], [test "x$with_ib_hw_tm"  != xno])
+AM_CONDITIONAL([HAVE_COMET_HW_UD], [test "x$with_comet_hw" != xno -a "x$has_get_av" != xno])
 
 uct_ib_modules=""
 m4_include([src/uct/ib/cm/configure.m4])

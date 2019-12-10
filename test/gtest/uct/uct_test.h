@@ -281,6 +281,7 @@ std::ostream& operator<<(std::ostream& os, const resource* resource);
     dc_mlx5,            \
     ud,                 \
     ud_mlx5,            \
+    ud_comet,           \
     cm
 
 #define UCT_TEST_SOCKADDR_TLS \
