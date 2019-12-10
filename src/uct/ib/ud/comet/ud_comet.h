@@ -13,8 +13,6 @@
 
 #include "../accel/ud_mlx5.h"
 
-#include <comet_lib.h>
-
 typedef struct {
     uct_ud_mlx5_iface_t                 super;
 #if 0
@@ -39,6 +37,8 @@ typedef struct {
  * COMET resource descriptor of a transport device
  */
 #define UCT_COMET_DEVICE_NAME_MAX (UCT_DEVICE_NAME_MAX - sizeof(const struct comet_capabilities *))
+
+#define UCT_UD_COMET_TL_NAME "UD_COMET"
 
 typedef struct uct_tl_comet_device_resource {
     char                     tl_name[UCT_TL_NAME_MAX];   /**< Transport name */

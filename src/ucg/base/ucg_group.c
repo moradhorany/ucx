@@ -14,6 +14,7 @@
 #include <ucp/core/ucp_worker.h>
 #include <ucp/core/ucp_ep.inl>
 #include <ucp/core/ucp_proxy_ep.h> /* for @ref ucp_proxy_ep_test */
+#include <uct/ib/ud/comet/ud_comet.h>
 
 #if ENABLE_STATS
 /**
@@ -433,8 +434,6 @@ static ucs_status_t ucg_worker_groups_init(ucp_worker_h worker,
         ucg_plan_release_list(gctx->planners, gctx->num_planners);
         return status;
     }
-
-#define UCT_UD_COMET_TL_NAME UCT_MM_COLL_TL_NAME /* Shuki: remove this line */
 
     status = ucg_worker_groups_find_tl_id(worker, &gctx->ud_comet_tl_id, UCT_UD_COMET_TL_NAME);
     if (status != UCS_OK) {

@@ -154,7 +154,7 @@ uct_ud_comet_query_resources(uct_md_h md,
 	/* Initialize pointer to capabilities (comet_devices is always static) */
 	comet_dev_resource->comet_capabilities_p = &comet_devices[0];
 	comet_dev_resource->type = UCT_DEVICE_TYPE_ACC;
-	strcpy(&comet_dev_resource->tl_name[0], "UD_COMET");
+	strcpy(&comet_dev_resource->tl_name[0], UCT_UD_COMET_TL_NAME);
 	strcpy(&comet_dev_resource->dev_name[0], "COMET");
 
 	/* Return only 1 interface */
