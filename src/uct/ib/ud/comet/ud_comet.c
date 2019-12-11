@@ -155,7 +155,7 @@ uct_ud_comet_query_resources(uct_md_h md,
 	comet_dev_resource->comet_capabilities_p = &comet_devices[0];
 	comet_dev_resource->type = UCT_DEVICE_TYPE_ACC;
 	strcpy(&comet_dev_resource->tl_name[0], UCT_UD_COMET_TL_NAME);
-	strcpy(&comet_dev_resource->dev_name[0], "COMET");
+	strcpy(&comet_dev_resource->dev_name[0], "mlx5_1:1");
 
 	/* Return only 1 interface */
 	*num_resources_p = 1;
@@ -177,7 +177,7 @@ exit_error_free_resources:
 UCT_TL_COMPONENT_DEFINE(uct_ud_comet_tl,
                         uct_ud_comet_query_resources,
                         uct_ud_comet_iface_t,
-                        "ud_comet",
+						UCT_UD_COMET_TL_NAME,
                         "UD_comet_",
                         uct_ud_comet_iface_config_table,
 						uct_ud_mlx5_iface_config_t);
