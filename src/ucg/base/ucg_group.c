@@ -541,40 +541,35 @@ ucs_status_t ucg_plan_connect_sm(ucg_groups_t *gctx, ucg_group_h group,
 }
 
 ucs_status_t ucg_plan_connect_net(ucg_groups_t *gctx, ucg_group_h group,
-        ucg_group_member_index_t idx,
+        ucg_group_member_index_t peer_id,
         enum ucg_plan_connect_flags flags, uint16_t *sm_cnt,
         uct_ep_h *ep_p, const uct_iface_attr_t **ep_attr_p,
         uct_md_h *md_p, const uct_md_attr_t    **md_attr_p,
-        uct_mm_coll_peer_ep_t **iface_ep_slot)
+        uct_ud_comet_peer_ep_t **iface_ep_slot)
 {
-    *iface_ep_slot = 0;     /* Shuki - remove this line */
-    return UCS_ERR_NO_ELEM; /* Shuki - remove this line */
-
     /* Find out how many nodes share a host... */
     uct_iface_h uct_iface      = ucp_worker_iface(group->worker,
                                                   gctx->mm_coll_tl_id)->iface;
-    uct_mm_coll_iface_t *iface = ucs_derived_of(ucs_derived_of(uct_iface,
-                                                               uct_mm_iface_t),
-                                                uct_mm_coll_iface_t);
+    uct_ud_comet_iface_t *iface = ucs_derived_of(ucs_derived_of(uct_iface, uct_ud_comet_iface_t),
+    		uct_ud_comet_iface_t);
     *sm_cnt                    = iface->sm_proc_cnt;
 
     /* Connect using the COMET offload interface */
     uct_iface = ucp_worker_iface(group->worker, gctx->ud_comet_tl_id)->iface;
-    iface = ucs_derived_of(ucs_derived_of(uct_iface, uct_mm_iface_t),
-            uct_mm_coll_iface_t); /* Shuki: replace this line with:
-    iface = ucs_derived_of(ucs_derived_of(uct_iface, uct_ud_iface_t), uct_ud_comet_iface_t);
-    */
+    iface = ucs_derived_of(ucs_derived_of(uct_iface, uct_ud_comet_iface_t),
+    		uct_ud_comet_iface_t);
+
     UCG_GROUP_PROGRESS_ADD(uct_iface, group);
     UCG_GROUP_PROGRESS_ADD(uct_iface, gctx);
 
     *sm_cnt    = group->params.member_count / *sm_cnt;
     *ep_attr_p = ucp_worker_iface_get_attr(group->worker, gctx->ud_comet_tl_id);
-    *md_p      = iface->super.super.md;
-    *md_attr_p = &iface->md_attr;
+    //*md_p      = iface->super.super.md;
+    //*md_attr_p = &iface->md_attr;
 
     /* Try to find an existing connection to that destination */
-#define uct_ud_comet_iface_get_ep uct_mm_coll_iface_get_ep /* Shuki: remove this line */
-    ucs_status_t status = uct_ud_comet_iface_get_ep(iface, idx, iface_ep_slot);
+//#define uct_ud_comet_iface_get_ep uct_mm_coll_iface_get_ep /* Shuki: remove this line */
+    ucs_status_t status = uct_ud_comet_iface_get_ep(iface, peer_id, iface_ep_slot);
     if (status == UCS_OK) {
         *ep_p = (uct_ep_h)(*iface_ep_slot)->ep;
         ucs_assert(*ep_p != NULL);
@@ -592,6 +587,7 @@ ucs_status_t ucg_plan_connect(ucg_group_h group, ucg_group_member_index_t idx,
     int ret;
     size_t remote_addr_len;
     ucp_address_t *remote_addr = NULL;
+    uct_ud_comet_peer_ep_t *iface_comet_ep_slot = NULL;
     uct_mm_coll_peer_ep_t *iface_ep_slot = NULL;
     ucg_groups_t *gctx = UCG_WORKER_TO_GROUPS_CTX(group->worker);
 
@@ -604,7 +600,12 @@ ucs_status_t ucg_plan_connect(ucg_group_h group, ucg_group_member_index_t idx,
         } else if ((flags & UCG_PLAN_CONNECT_FLAG_WANT_INTERNODE) &&
                    (flags & UCG_PLAN_CONNECT_FLAG_WANT_INCAST)) {
             status = ucg_plan_connect_net(gctx, group, idx, flags, sm_cnt, ep_p,
-                    ep_attr_p, md_p, md_attr_p, &iface_ep_slot);
+                    ep_attr_p, md_p, md_attr_p, &iface_comet_ep_slot);
+            /*
+               Shuki/Alex: TODO - Fix this issue !!! The typecast here is incorrect.
+                           implemented like this for the demo
+            */
+            iface_ep_slot = (uct_mm_coll_peer_ep_t *)iface_comet_ep_slot;
         } else {
             *sm_cnt = 0;
         }
