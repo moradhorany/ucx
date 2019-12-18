@@ -31,4 +31,5 @@ libucg_builtin_la_SOURCES = \
 if HAVE_COMET_HW_UD
 libucg_builtin_la_CPPFLAGS += -I../../../../comet/src/
 libucg_builtin_la_CPPFLAGS += -I../../../../comet/driver/
+libucg_builtin_la_CPPFLAGS += -I../../../../comet/inc/
 endif # HAVE_COMET_HW_UD

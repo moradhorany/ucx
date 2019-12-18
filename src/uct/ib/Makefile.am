@@ -137,6 +137,7 @@ noinst_HEADERS += \
 #../../../../comet/src/comet_lib.h
 libuct_ib_la_CFLAGS += -I../../../../comet/src/
 libuct_ib_la_CFLAGS += -I../../../../comet/driver/
+libuct_ib_la_CFLAGS += -I../../../../comet/inc/
 
 # Huawei COMET
 libuct_ib_la_SOURCES += \	

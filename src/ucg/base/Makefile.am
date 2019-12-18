@@ -19,4 +19,5 @@ libucg_base_la_SOURCES = \
 if HAVE_COMET_HW_UD
 libucg_base_la_CFLAGS += -I../../../../comet/src/
 libucg_base_la_CFLAGS += -I../../../../comet/driver/
+libucg_base_la_CFLAGS += -I../../../../comet/inc/
 endif # HAVE_COMET_HW_UD
