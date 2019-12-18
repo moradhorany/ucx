@@ -1,5 +1,5 @@
 /**
- * Copyright (C) Mellanox Technologies Ltd. 2001-2014.  ALL RIGHTS RESERVED.
+ * Copyright (C) Huawei Technologies Co., Ltd. 2019.  ALL RIGHTS RESERVED.
  *
  * See file LICENSE for terms.
  */
@@ -12,6 +12,15 @@
 #include <uct/ib/ud/base/ud_ep.h>
 
 #include "../accel/ud_mlx5.h"
+
+typedef struct {
+    uct_ud_iface_config_t               super;
+    uct_ib_mlx5_iface_config_t          mlx5_common;
+    uct_ud_mlx5_iface_common_config_t   ud_mlx5_common;
+
+    /* COMET-specific configurations */
+    unsigned                            device_index;
+} uct_ud_comet_iface_config_t;
 
 /**
  * COMET resource descriptor of a transport device
@@ -28,83 +37,17 @@ typedef struct uct_tl_comet_device_resource {
     uct_device_type_t         type;     /**< Device type. To which UCT group it belongs to */
 } uct_tl_comet_device_resource_t;
 
-typedef struct uct_comet_ep uct_comet_ep_t;
+typedef uct_ud_mlx5_ep_t uct_comet_ep_t;
 
-/* UCG integration */
-typedef struct uct_comet_recv_desc {
-    uct_recv_desc_t   super;
-    uct_comet_ep_t *ep;
-} uct_comet_recv_desc_t;
+typedef struct uct_ud_comet_iface {
+    uct_ud_mlx5_iface_t super;
 
-struct uct_comet_ep {
-    uct_base_ep_t           super;
+    uint32_t            sm_proc_cnt;
+    uct_md_attr_t       md_attr;
 
-    uct_comet_ep_t          *tx;              /* For sending messages to the root */
-    uct_comet_ep_t          *rx;              /* For receiving messages, broadcasted by a peer */
-
-    uint8_t                 my_coll_id;      /* My ID within this host */
-    uint8_t                 my_offset;       /* Where to write in "batch mode" */
-    uint8_t                 fifo_shift;      /* shortcut to iface->fifo_shift */
-    uint8_t                 is_loopback;     /* Indicates a special endpoint */
-    uint32_t                tx_cnt;          /* shortcut to iface->sm_proc_cnt */
-
-    unsigned                tx_index;        /* TX next writing location */
-    unsigned                rx_index;        /* RX next reading location */
-
-    unsigned                fifo_mask;       /* shortcut to iface->fifo_mask */
-    unsigned                fifo_size;       /* shortcut to iface->config.fifo_size */
-    unsigned                fifo_elem_size;  /* shortcut to iface->config.fifo_elem_size */
-
-    /* --- cache-line limit (with ENABLE_STATS) --- */
-
-    uct_comet_recv_desc_t release_desc;    /* Release descriptor */
-} UCS_S_PACKED UCS_V_ALIGNED(UCS_SYS_CACHE_LINE_SIZE);
-
-typedef struct uct_comet_peer_ep {
-#define UCT_COMET_NO_PEER_ID ((uint64_t)-1)
-    uint64_t          peer_id;
-    uct_comet_ep_t    *ep;
-} uct_ud_comet_peer_ep_t;
-
-typedef struct {
-    uct_ud_mlx5_iface_t                 super;
-#if 0
-    struct {
-        uct_ib_mlx5_txwq_t              wq;
-    } tx;
-    struct {
-        uct_ib_mlx5_rxwq_t              wq;
-    } rx;
-    uct_ib_mlx5_cq_t                    cq[UCT_IB_DIR_NUM];
-    uct_ud_mlx5_iface_common_t          ud_mlx5_common;
-#endif
-    /* Huawei COMET device reference */
-    void							    *comet_ref;
-
-    /* Huawei COMET device index */
-    uint32_t							comet_device_index;
-
-    uct_ud_comet_peer_ep_t				*eps;
-
-    uint32_t							sm_proc_cnt;
+    void               *comet_ref;          /* Huawei COMET device reference */
+    uint32_t            comet_device_index; /* Huawei COMET device index */
 } uct_ud_comet_iface_t;
-
-static inline ucs_status_t
-uct_ud_comet_iface_get_ep(uct_ud_comet_iface_t *iface,
-        uint64_t peer_id, uct_ud_comet_peer_ep_t **peer_ep)
-{
-    /*
-     * Note: iface->eps is initially allocated to the maximal required size,
-     * and also "null-terminated". This function is intended for "slow-path".
-     */
-	uct_ud_comet_peer_ep_t *iter = iface->eps;
-    while (iter->ep && (iter->peer_id != peer_id)) {
-        iter++;
-    }
-
-    *peer_ep = iter; /* If not found - return the next vacant slot to be used */
-    return iter->ep ? UCS_OK : UCS_ERR_NO_ELEM;
-}
 
 #endif /* _UD_COMET_H_ */
 
