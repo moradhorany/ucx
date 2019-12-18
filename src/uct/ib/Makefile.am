@@ -130,7 +130,6 @@ noinst_HEADERS += \
 libuct_ib_la_SOURCES += \
 	ud/accel/ud_mlx5_common.c \
 	ud/accel/ud_mlx5.c
-endif # HAVE_MLX5_HW_UD
 
 if HAVE_COMET_HW_UD
 noinst_HEADERS += \	
@@ -145,6 +144,8 @@ libuct_ib_la_SOURCES += \
 	../../../../comet/src/comet_lib.c \
 	../../../../comet/driver/comet_fpga_driver.c
 endif # HAVE_COMET_HW_UD
+
+endif # HAVE_MLX5_HW_UD
 
 endif # HAVE_TL_UD
 
