@@ -51,10 +51,10 @@ static unsigned uct_ud_comet_iface_progress(uct_iface_h tl_iface)
     ucs_status_t status;
     unsigned idx, count;
 
-    for (idx = self->last_done_idx + 1;
-         idx < self->last_done_idx;
-         idx = (idx + 1) % self->num_tables) {
-        if (self->prefixes[idx]) {
+    for (idx = iface->last_table_comp_idx + 1;
+         idx < iface->last_table_comp_idx;
+         idx = (idx + 1) % iface->table_cnt) {
+        if (iface->tables[idx].) {
             void *base_address = ???;
             uct_am_handler();
 
@@ -74,20 +74,29 @@ ucs_status_t uct_ud_comet_iface_tag_recv_zcopy(uct_iface_h iface, uct_tag_t tag,
                                                size_t iovcnt,
                                                uct_tag_context_t *ctx)
 {
-    uct_ud_comet_table_t *table = 0;
-    uint64_t comet_prefix = (uint64_t)tag;
-    void *base_address = iov[0].buffer;
+    uct_ud_comet_iface_t *iface = ucs_derived_of(tl_iface, uct_ud_comet_iface_t);
+    uint64_t comet_prefix       = (uint64_t)tag;
+    void *base_address          = (void*)iov; /* WARNING: parameter type abuse*/
+    uint32_t table_index        = iovcnt;     /* WARNING: parameter type abuse*/
+    uct_ud_comet_table_t *table = iface->tables[table_index];
 
     /* Sanity checks */
-    ucs_assert(iovcnt == 2);
     ucs_assert(comet_prefix != 0);
     ucs_assert(tag_mask == (uct_tag_t)-1);
     ucs_assert(ctx->completed_cb != NULL);
 
-    /* Give COMET the */
-    comet_recv(comet_iface->comet_handle, uint32_t table_index,
-           uint64_t host_prefix_destination_address,
-           uint64_t host_data_destination_address);
+    if (table->incoming_data_va != base_address) {
+        table->incoming_data_va = base_address;
+        table->incoming_data_pa = comet_buffer_phys_address_get(base_address);
+    }
+
+    comet_packet_header_init(struct comet_packet_header *packet_header,
+            uint8_t table_id, uint8_t slot_id, uint64_t prefix);
+
+    /* Set the request in the COMET table */
+    int ret = comet_recv(comet_iface->comet_ref, table_index,
+                         &table->incoming_prefix, base_address);
+    return ret ? UCS_ERR_IO_ERROR : UCS_OK;
 }
 
 static void ud_comet_ops_mlx5_reuse_initialize(uct_ud_iface_ops_t *ops)
@@ -124,6 +133,25 @@ static UCS_CLASS_INIT_FUNC(uct_ud_comet_iface_t,
     if ((ret != 0) || (self->comet_ref == NULL)) {
         ucs_debug("Failed to initialize COMET");
         return UCS_ERR_NO_MEMORY;
+    }
+
+    /* Query the COMET device capabilities */
+    unsigned num_comet_devices;
+    ret = comet_query_capabilities(&comet_devices, &num_comet_devices);
+    if (ret != 0) {
+        ucs_error("Failed to query COMET capabilities");
+        return UCS_ERR_NO_RESOURCE;
+    }
+
+    /* Generate per-table information based on the COMET device capabilities */
+    self->tables = UCS_ALLOC_CHECK(num_comet_devices * sizeof(uct_ud_comet_table_t),
+                                   "COMET tables array");
+    unsigned idx;
+    for (idx = 0; idx < num_comet_devices; idx++) {
+        self->tables[idx].collective_type = UCT_UD_COMET_COLL_TYPE_ALLREDUCE; // TODO: detect
+        self->tables[idx].incoming_prefix = 0;
+        self->tables[idx].incoming_data_va = NULL;
+        self->tables[idx].incoming_data_pa = NULL;
     }
 
     return UCS_OK;
