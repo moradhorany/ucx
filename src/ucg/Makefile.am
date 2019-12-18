@@ -24,8 +24,3 @@ nobase_dist_libucg_la_HEADERS = \
 	api/ucg_plan_component.h \
 	api/ucg_mpi.h \
 	api/ucg.h
-
-if HAVE_COMET_HW_UD
-libucg_la_CPPFLAGS += -I../../../../comet/src/
-libucg_la_CPPFLAGS += -I../../../../comet/driver/
-endif # HAVE_COMET_HW_UD

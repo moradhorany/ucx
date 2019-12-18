@@ -27,3 +27,8 @@ libucg_builtin_la_SOURCES = \
 	plan/builtin_tree.c \
 	plan/builtin_neighbor.c \
 	plan/builtin_recursive.c
+
+if HAVE_COMET_HW_UD
+libucg_builtin_la_CPPFLAGS += -I../../../../comet/src/
+libucg_builtin_la_CPPFLAGS += -I../../../../comet/driver/
+endif # HAVE_COMET_HW_UD

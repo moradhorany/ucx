@@ -15,3 +15,8 @@ libucg_base_la_SOURCES = \
 	ucg_plan.c \
 	ucg_group.c \
 	ucg_version.c
+
+if HAVE_COMET_HW_UD
+libucg_base_la_CFLAGS += -I../../../../comet/src/
+libucg_base_la_CFLAGS += -I../../../../comet/driver/
+endif # HAVE_COMET_HW_UD
