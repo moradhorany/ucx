@@ -27,7 +27,7 @@ ucs_status_t ucg_builtin_bruck_create(ucg_builtin_group_ctx_t *ctx,
 
     while (step_size < proc_count) {
         step_size <<= 1;
-        step_idx++;
+        step_idx++;			/* step_idx set to number of steps here */
     }
 
     /* Allocate memory resources */
@@ -55,6 +55,7 @@ ucs_status_t ucg_builtin_bruck_create(ucg_builtin_group_ctx_t *ctx,
     }
 
     /* Calculate the peers for each step */
+    /* step_idx used differently here... */
     for (step_idx = 0, step_size = 1;
          ((step_idx < bruck->phs_cnt) && (status == UCS_OK));
          step_idx++, phase++, step_size <<= 1)
@@ -96,7 +97,8 @@ ucs_status_t ucg_builtin_bruck_create(ucg_builtin_group_ctx_t *ctx,
             phase->multi_eps = next_ep++;
 
             /* connected to receiver for second EP */
-            status = ucg_builtin_connect(ctx, peer_index_src, phase, phase_ep_index);
+            status = ucg_builtin_connect(ctx, peer_index_src, phase, phase_ep_index, 0 );
+
             if (status != UCS_OK) {
                 return status;
             }
@@ -106,15 +108,20 @@ ucs_status_t ucg_builtin_bruck_create(ucg_builtin_group_ctx_t *ctx,
             /* set threshold for receiver
              * for bruck threshold for receiver and sender maybe not same!!!
              */
-             phase->max_short_one_recv = phase->max_short_one;
-             phase->max_short_max_recv = phase->max_short_max;
-             phase->max_bcopy_one_recv = phase->max_bcopy_one;
-             phase->max_bcopy_max_recv = phase->max_bcopy_max;
-            phase->max_zcopy_one_recv = phase->max_zcopy_one;
-            phase->md_attr_cap_max_reg_recv = phase->md_attr->cap.max_reg;
+            /* Alex: variables on LHS are not part of the ucg_builtin_plan_phase struct */
+            //phase->max_short_one_recv = phase->max_short_one;
+            //phase->max_short_max_recv = phase->max_short_max;
+            //phase->max_bcopy_one_recv = phase->max_bcopy_one;
+            //phase->max_bcopy_max_recv = phase->max_bcopy_max;
+            //phase->max_zcopy_one_recv = phase->max_zcopy_one;
+            //phase->md_attr_cap_max_reg_recv = phase->md_attr->cap.max_reg;
 
             /* connected to sender for first EP */
-            status = ucg_builtin_connect(ctx, peer_index_dst, phase, phase_ep_index);
+            /* CHECK: is it necessary? */
+
+            /* Alex: too few arguments */
+            status = ucg_builtin_connect(ctx, peer_index_dst, phase, phase_ep_index, 0 )
+
             if (status != UCS_OK) {
                 return status;
             }
@@ -132,19 +139,23 @@ ucs_status_t ucg_builtin_bruck_create(ucg_builtin_group_ctx_t *ctx,
             phase->ep_cnt  = 1;
             bruck->ep_cnt -= 1;
             phase->multi_eps = next_ep++;
-            status = ucg_builtin_connect(ctx, peer_index_src, phase, UCG_BUILTIN_CONNECT_SINGLE_EP);
+
+            /* Alex: too few arguments */
+            //status = ucg_builtin_connect(ctx, peer_index_src, phase, UCG_BUILTIN_CONNECT_SINGLE_EP);
+
             if (status != UCS_OK) {
                 return status;
             }
             /* set threshold for receiver
              * for bruck threshold for receiver and sender maybe not same!!!
              */
-             phase->max_short_one_recv = phase->max_short_one;
-             phase->max_short_max_recv = phase->max_short_max;
-             phase->max_bcopy_one_recv = phase->max_bcopy_one;
-             phase->max_bcopy_max_recv = phase->max_bcopy_max;
-            phase->max_zcopy_one_recv = phase->max_zcopy_one;
-            phase->md_attr_cap_max_reg_recv = phase->md_attr->cap.max_reg;
+            /* Alex: variables on LHS are not part of the ucg_builtin_plan_phase struct */
+            //phase->max_short_one_recv = phase->max_short_one;
+            //phase->max_short_max_recv = phase->max_short_max;
+            //phase->max_bcopy_one_recv = phase->max_bcopy_one;
+            //phase->max_bcopy_max_recv = phase->max_bcopy_max;
+            //phase->max_zcopy_one_recv = phase->max_zcopy_one;
+            //phase->md_attr_cap_max_reg_recv = phase->md_attr->cap.max_reg;
         }
 
     }

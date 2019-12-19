@@ -31,6 +31,7 @@ enum UCS_S_PACKED ucg_builtin_plan_method_type {
     UCG_PLAN_METHOD_REDUCE_WAYPOINT,   /* receive, reduce, and pass onwards */
     UCG_PLAN_METHOD_REDUCE_RECURSIVE,  /* send+receive and reduce (RD) */
     UCG_PLAN_METHOD_ALLTOALL_BRUCK,    /* Send+receive and exchange (all2all) */
+    UCG_PLAN_METHOD_ALLGATHER_BRUCK,   /* Send+receive and exchange (all2all) */
     UCG_PLAN_METHOD_NEIGHBOR           /* "halo exchange", for neighborhood ops */
 };
 

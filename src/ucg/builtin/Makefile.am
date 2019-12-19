@@ -26,7 +26,9 @@ libucg_builtin_la_SOURCES = \
 	ops/builtin_control.c \
 	plan/builtin_tree.c \
 	plan/builtin_neighbor.c \
-	plan/builtin_recursive.c
+	plan/builtin_recursive.c\
+	plan/builtin_bruck.c	\
+	plan/builtin_pairwise.c
 
 if HAVE_COMET_HW_UD
 libucg_builtin_la_CPPFLAGS += -I../../../../comet/src/

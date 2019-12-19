@@ -413,6 +413,9 @@ static void ucg_builtin_print(ucg_plan_t *plan, const ucg_collective_params_t *c
         case UCG_PLAN_METHOD_REDUCE_RECURSIVE:
             printf("Reduce (R), ");
             break;
+        case UCG_PLAN_METHOD_ALLGATHER_BRUCK:
+        	/* Correct! */
+            printf("Alltoall (G), ");
         case UCG_PLAN_METHOD_ALLTOALL_BRUCK:
             printf("Alltoall (R), ");
             break;
