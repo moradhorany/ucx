@@ -54,6 +54,11 @@ typedef uct_ud_mlx5_ep_t uct_comet_ep_t;
 typedef struct uct_ud_comet_iface {
     uct_ud_mlx5_iface_t   super;
     unsigned            (*super_progress)(uct_iface_h tl_iface);
+    /* Super function for uct_ud_ep_send() */
+    ucs_status_t 		(*super_uct_ud_ep_send)(uct_ep_h tl_ep, uint8_t id, const void *header,
+                                    unsigned header_length, const uct_iov_t *iov,
+                                    size_t iovcnt, unsigned flags,
+                                    uct_completion_t *comp);
 
     uint32_t              sm_proc_cnt;         /* provided PPN information */
     uct_md_attr_t         md_attr;             /* memory domain attributes */

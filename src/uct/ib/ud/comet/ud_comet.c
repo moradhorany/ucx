@@ -66,12 +66,35 @@ static unsigned uct_ud_comet_iface_progress(uct_iface_h tl_iface)
     return iface->super_progress(tl_iface); /* uct_ud_mlx5_iface_progress */
 }
 
-ucs_status_t uct_ud_comet_ep_send()
+ucs_status_t uct_ud_comet_ep_send(uct_ep_h tl_ep, uint8_t id, const void *header,
+                                unsigned header_length, const uct_iov_t *iov,
+                                size_t iovcnt, unsigned flags,
+                                uct_completion_t *comp)
 {
-    /*
-      comet_packet_header_init(struct comet_packet_header *packet_header,
-            uint8_t table_id, uint8_t slot_id, uint64_t prefix);
-     */
+#if 0
+    uct_ud_mlx5_ep_t *ep = ucs_derived_of(tl_ep, uct_ud_mlx5_ep_t);
+#endif
+    uct_ud_comet_iface_t *iface = ucs_derived_of(tl_ep->iface,
+                                                    uct_ud_comet_iface_t);
+    uint64_t tag = 0; // Shuki: TODO - Unknown.
+    register uint64_t comet_prefix = (uint64_t)tag;
+    struct comet_packet_header *packet_header = (struct comet_packet_header *)iov[0].buffer;
+    uint32_t table_index        = iovcnt;     /* WARNING: parameter type abuse*/
+    uint8_t slot_id = 0; // Shuki: TODO - Unknown.
+
+    /* Sanity checks */
+    ucs_assert(comet_prefix != 0);
+    //ucs_assert(tag_mask == (uct_tag_t)-1);
+
+    /* Assume enough space in SGE[0] for the COMET header*/
+    comet_packet_header_init(packet_header,
+       (uint8_t)table_index, slot_id, comet_prefix);
+
+    /* Call super function */
+    iface->super_uct_ud_ep_send(tl_ep, id, header,
+            header_length, iov, iovcnt, flags,
+            comp);
+
     return UCS_OK;
 }
 
@@ -86,6 +109,9 @@ ucs_status_t uct_ud_comet_iface_tag_recv_zcopy(uct_iface_h iface, uct_tag_t tag,
     void *base_address          = iov[0].buffer;
     uint32_t table_index        = iovcnt;     /* WARNING: parameter type abuse*/
     uct_ud_comet_table_t *table = &comet->tables[table_index];
+    uct_ud_comet_table_t *table_pa = (uct_ud_comet_table_t *)comet_buffer_phys_address_get(comet->tables);
+
+    table_pa = &table_pa[table_index];
 
     /* Sanity checks */
     ucs_assert(comet_prefix != 0);
@@ -101,16 +127,22 @@ ucs_status_t uct_ud_comet_iface_tag_recv_zcopy(uct_iface_h iface, uct_tag_t tag,
 
     /* Set the request in the COMET table */
     int ret = comet_recv(comet->comet_ref, table_index,
-                         (uintptr_t)&table->incoming_prefix,
-                         (uintptr_t)base_address);
+                         (uintptr_t)&table_pa->incoming_prefix,
+                         (uintptr_t)table->incoming_data_pa);
     return ret ? UCS_ERR_IO_ERROR : UCS_OK;
 }
 
-static void ud_comet_ops_mlx5_reuse_initialize(uct_ud_iface_ops_t *ops)
+static void ud_comet_ops_mlx5_reuse_initialize(uct_ud_comet_iface_t *comet_iface,
+	uct_ud_iface_ops_t *ops)
 {
     ops->super.super.iface_close = UCS_CLASS_DELETE_FUNC_NAME(uct_ud_comet_iface_t);
     ops->super.super.iface_progress = uct_ud_comet_iface_progress;
     ops->super.super.iface_tag_recv_zcopy = uct_ud_comet_iface_tag_recv_zcopy;
+
+    if (comet_iface->super_uct_ud_ep_send == NULL) {
+    	comet_iface->super_uct_ud_ep_send = ops->super.super.ep_am_zcopy;
+    }
+    ops->super.super.ep_am_zcopy = uct_ud_comet_ep_send;
 }
 
 static UCS_CLASS_INIT_FUNC(uct_ud_comet_iface_t,
@@ -124,7 +156,7 @@ static UCS_CLASS_INIT_FUNC(uct_ud_comet_iface_t,
     UCS_CLASS_CALL_SUPER_INIT(uct_ud_mlx5_iface_t, md,
                               worker, params, &config->super.super.super);
     self->super_progress = self->super.super.super.super.super.ops.iface_progress;
-    ud_comet_ops_mlx5_reuse_initialize(&uct_ud_comet_iface_ops);
+    ud_comet_ops_mlx5_reuse_initialize(self, &uct_ud_comet_iface_ops);
 
     /* Get the attributes of this MD for connection establishment later */
     ucs_status_t status = uct_mm_md_query(md, &self->md_attr);
@@ -153,8 +185,8 @@ static UCS_CLASS_INIT_FUNC(uct_ud_comet_iface_t,
     }
 
     /* Generate per-table information based on the COMET device capabilities */
-    self->tables = UCS_ALLOC_CHECK(num_comet_devices * sizeof(uct_ud_comet_table_t),
-                                   "COMET tables array");
+    self->tables = comet_alloc(self->comet_ref,
+    		num_comet_devices * sizeof(uct_ud_comet_table_t));
     unsigned idx;
     for (idx = 0; idx < num_comet_devices; idx++) {
         self->tables[idx].collective_type  = UCT_UD_COMET_COLL_TYPE_REDUCE; // TODO: detect
