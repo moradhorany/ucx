@@ -450,6 +450,19 @@ ucg_builtin_step_am_zcopy_max(ucg_builtin_request_t *req,
  * step->flags in the switch-case inside @ref ucg_builtin_step_execute() .
  */
 
+#define case_send_calc(_is_rbuf, step, ep_cnt)                 \
+{                                                              \
+    size_t calc_offset = (base_offset + (item_interval *       \
+                          (send_count - step->iter_calc)) %    \
+                           (step->buffer_length * ep_cnt));    \
+    if (_is_rbuf) {                                            \
+        step->recv_buffer = base_buffer + calc_offset;         \
+    } else {                                                   \
+        step->send_buffer = base_buffer + calc_offset;         \
+    }                                                          \
+    --step->iter_calc;                                         \
+}
+
 #define case_send_full(/* General parameters */                                \
                        req, ureq, step, phase,                                 \
                        /* Receive-related indicators, for non-send-only steps*/\
@@ -492,12 +505,12 @@ ucg_builtin_step_am_zcopy_max(ucg_builtin_request_t *req,
                        UCS_BIT(sizeof(step->iter_calc) << 3));                 \
             step->calc_cb(req, &send_count, &base_offset, &item_interval);     \
             if (!step->iter_calc) {                                            \
-                if (_is_rbuf) {                                                \
-                    step->recv_buffer += base_offset;                          \
-                } else {                                                       \
-                    step->send_buffer += base_offset;                          \
-                }                                                              \
                 step->iter_calc = send_count;                                  \
+            }                                                                  \
+            if (_is_rbuf) {                                                    \
+                base_buffer = step->recv_buffer;                               \
+            } else {                                                           \
+                base_buffer = step->send_buffer;                               \
             }                                                                  \
         }                                                                      \
                                                                                \
@@ -511,13 +524,9 @@ ucg_builtin_step_am_zcopy_max(ucg_builtin_request_t *req,
                 }                                                              \
                                                                                \
                 if (_is_calc) {                                                \
-                    if (_is_rbuf) {                                            \
-                        step->recv_buffer += item_interval;                    \
-                    } else {                                                   \
-                        step->send_buffer += item_interval;                    \
-                    }                                                          \
+                    case_send_calc(_is_rbuf, step, 1);                         \
                 }                                                              \
-            } while (_is_calc && --step->iter_calc);                           \
+            } while (_is_calc && step->iter_calc);                             \
         } else {                                                               \
             if ((_is_pipelined) && (ucs_unlikely(step->iter_offset ==          \
                     UCG_BUILTIN_OFFSET_PIPELINE_PENDING))) {                   \
@@ -545,12 +554,7 @@ ucg_builtin_step_am_zcopy_max(ucg_builtin_request_t *req,
                 }                                                              \
                                                                                \
                 if (_is_calc) {                                                \
-                    if (_is_rbuf) {                                            \
-                        step->recv_buffer += item_interval;                    \
-                    } else {                                                   \
-                        step->send_buffer += item_interval;                    \
-                    }                                                          \
-                    step->iter_calc--;                                         \
+                    case_send_calc(_is_rbuf, step, phase->ep_cnt);             \
                 }                                                              \
             } while (++ep_iter < ep_last);                                     \
                                                                                \
@@ -589,11 +593,10 @@ ucg_builtin_step_am_zcopy_max(ucg_builtin_request_t *req,
                                                                                \
         if (_is_calc) {                                                        \
             ucs_assert(step->iter_calc == 0);                                  \
-            base_offset += send_count * item_interval;                         \
                 if (_is_rbuf) {                                                \
-                    step->recv_buffer -= base_offset;                          \
+                    step->recv_buffer = base_buffer;                           \
                 } else {                                                       \
-                    step->send_buffer -= base_offset;                          \
+                    step->send_buffer = base_buffer;                           \
                 }                                                              \
         }                                                                      \
                                                                                \
@@ -683,12 +686,13 @@ UCS_PROFILE_FUNC(ucs_status_t, ucg_builtin_step_execute, (req, user_req),
                  ucg_builtin_request_t *req, ucg_request_t **user_req)
 {
     int is_zcopy;
+    int8_t *base_buffer;
     uint16_t local_id;
-	uint8_t send_count;
-	size_t base_offset;
-	size_t item_interval;
+    uint8_t send_count;
+    size_t base_offset;
+    size_t item_interval;
     ucs_status_t status;
-	
+
     ucg_builtin_op_step_t *step     = req->step;
     ucg_builtin_plan_phase_t *phase = step->phase;
     ucg_builtin_comp_slot_t *slot   = ucs_container_of(req, ucg_builtin_comp_slot_t, req);

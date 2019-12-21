@@ -48,7 +48,8 @@ ucs_status_t ucg_builtin_pairwise_create(ucg_builtin_group_ctx_t *ctx,
     }
 
     /* Calculate the peers for each step */
-    phase->method = UCG_PLAN_METHOD_SCATTER_TERMINAL;
+    phase->method = UCG_PLAN_METHOD_PAIRWISE;
+    phase->step_index = step_idx;
 
     for(int step_idx = 0; step_idx < (int) nSteps-1; step_idx++){
     	phase->step_index = step_idx;

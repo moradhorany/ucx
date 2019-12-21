@@ -124,6 +124,7 @@ typedef struct ucg_builtin_op_step {
 #define UCG_BUILTIN_FRAG_PENDING ((uint8_t)-1)
     volatile uint8_t          *fragment_pending;
 
+    /* Step-level callback functions (as opposed to Op-level callback functions) */
     ucg_builtin_step_calc_cb_t calc_cb;
     ucg_builtin_comp_recv_cb_t recv_cb;
 

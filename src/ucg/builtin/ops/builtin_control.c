@@ -64,7 +64,7 @@ void ucg_builtin_calc_alltoall(ucg_builtin_request_t *req, uint8_t *send_count,
 }
 
 /* Alltoall Bruck phase 3/3: shuffle the data */
-void ucg_builtin_finalize_alltoall(ucg_builtin_op_t *op)
+void ucg_builtin_fini_alltoall(ucg_builtin_op_t *op)
 {
     ucg_builtin_op_step_t *step = &op->steps[0];
     int bsize                   = step->buffer_length;
@@ -78,13 +78,28 @@ void ucg_builtin_finalize_alltoall(ucg_builtin_op_t *op)
     }
 }
 
+void ucg_builtin_init_scatter(ucg_builtin_op_t *op)
+{
+    ucg_builtin_plan_t *plan    = ucs_derived_of(op->super.plan, ucg_builtin_plan_t);
+    void *dst                   = op->steps[plan->phs_cnt - 1].recv_buffer;
+    ucg_builtin_op_step_t *step = &op->steps[0];
+    void *src                   = step->send_buffer;
+    size_t length               = step->buffer_length;
+    size_t offset               = length * plan->super.my_index;
+
+    if (dst != src) {
+        memcpy(dst + offset, src + offset, length);
+    }
+}
+
 void ucg_builtin_calc_scatter(ucg_builtin_request_t *req, uint8_t *send_count,
                               size_t *base_offset, size_t *item_interval)
 {
+    ucg_builtin_plan_t *plan    = ucs_derived_of(req->op->super.plan, ucg_builtin_plan_t);
     ucg_builtin_op_step_t *step = req->step;
-    *send_count = step->phase->ep_cnt;
-    *base_offset = 0;
-    *item_interval = step->buffer_length;
+    *send_count                 = step->phase->ep_cnt;
+    *base_offset                = step->buffer_length * plan->super.my_index;
+    *item_interval              = step->buffer_length;
 }
 
 ucs_status_t ucg_builtin_op_select_callbacks(ucg_builtin_plan_t *plan,
@@ -98,12 +113,16 @@ ucs_status_t ucg_builtin_op_select_callbacks(ucg_builtin_plan_t *plan,
         break;
 
     case UCG_PLAN_METHOD_GATHER_WAYPOINT:
-    //TODO: case UCG_PLAN_METHOD_GATHER_TERMINAL:
         *init_cb = ucg_builtin_init_gather;
         break;
 
     case UCG_PLAN_METHOD_ALLTOALL_BRUCK:
         *init_cb = ucg_builtin_init_alltoall;
+        break;
+
+    case UCG_PLAN_METHOD_PAIRWISE:
+    case UCG_PLAN_METHOD_SCATTER_TERMINAL:
+        *init_cb = ucg_builtin_init_scatter;
         break;
 
     default:
@@ -250,6 +269,12 @@ ucs_status_t ucg_builtin_step_create(ucg_builtin_plan_phase_t *phase,
 
     /* Set the actual step-related parameters */
     switch (phase->method) {
+    /* Send-all, Recv-all */
+    UCG_PLAN_METHOD_PAIRWISE:
+        extra_flags      |= UCG_BUILTIN_OP_STEP_FLAG_CALC_SENT_BUFFERS;
+        extra_flags      |= UCG_BUILTIN_OP_STEP_FLAG_RECV_AFTER_SEND;
+        /* no break */
+
     /* Send-only */
     case UCG_PLAN_METHOD_SCATTER_TERMINAL:
         extra_flags      |= UCG_BUILTIN_OP_STEP_FLAG_CALC_SENT_BUFFERS;

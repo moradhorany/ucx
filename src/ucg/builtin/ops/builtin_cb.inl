@@ -368,6 +368,7 @@ ucs_status_t ucg_builtin_step_select_callbacks(ucg_builtin_plan_phase_t *phase,
         /* No break */
     case UCG_PLAN_METHOD_SEND_TERMINAL:
     case UCG_PLAN_METHOD_SCATTER_TERMINAL:
+    case UCG_PLAN_METHOD_PAIRWISE:
         *recv_cb = is_single_msg ? ucg_builtin_comp_recv_one_cb :
                                    ucg_builtin_comp_recv_many_cb;
         break;
