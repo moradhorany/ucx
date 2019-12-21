@@ -26,17 +26,6 @@ static ucs_config_field_t uct_ud_comet_iface_config_table[] = {
   {NULL}
 };
 
-/* Full re-use of the mlx5 ops functions */
-extern uct_ud_iface_ops_t uct_ud_mlx5_iface_ops;
-
-extern UCS_F_NOINLINE void
-uct_ud_mlx5_iface_post_recv(uct_ud_comet_iface_t *iface);
-
-/* COMET interface - Uninitialized, will be initialized by
-   calling ud_comet_ops_mlx5_reuse_initialize()
-*/
-static uct_ud_iface_ops_t uct_ud_comet_iface_ops;
-
 static UCS_CLASS_DEFINE_DELETE_FUNC(uct_ud_comet_iface_t, uct_iface_t);
 
 extern UCS_CLASS_INIT_FUNC(uct_ud_mlx5_iface_t,
@@ -44,7 +33,38 @@ extern UCS_CLASS_INIT_FUNC(uct_ud_mlx5_iface_t,
                            const uct_iface_params_t *params,
                            const uct_iface_config_t *tl_config);
 
-static unsigned uct_ud_comet_iface_progress(uct_iface_h tl_iface)
+static ucs_status_t
+uct_ud_comet_ep_get_address(uct_ep_h ep, uct_ep_addr_t *addr)
+{
+    uct_ud_comet_iface_t *iface  = ucs_derived_of(ep->iface, uct_ud_comet_iface_t);
+    uct_ud_comet_ep_t *comet_ep  = ucs_derived_of(ep, uct_ud_comet_ep_t);
+    uct_ud_comet_ep_addr_t *addr = ucs_derived_of(ep_addr, uct_ud_comet_ep_address_t);
+
+    unsigned type_idx;
+    for (type_idx = 0; type_idx < UCT_UD_COMET_COLL_TYPE_LAST; type_idx++) {
+        comet_ep->header[type_idx].table_id = addr->table_id[type_idx];
+    }
+}
+
+static ucs_status_t
+uct_ud_comet_ep_connect_to_ep(uct_ep_h ep,
+                              const uct_device_addr_t *dev_addr,
+                              const uct_ep_addr_t *ep_addr)
+{
+    uct_ud_comet_iface_t *iface  = ucs_derived_of(ep->iface, uct_ud_comet_iface_t);
+    uct_ud_comet_ep_t *comet_ep  = ucs_derived_of(ep, uct_ud_comet_ep_t);
+    uct_ud_comet_ep_addr_t *addr = ucs_derived_of(ep_addr, uct_ud_comet_ep_address_t);
+
+    unsigned type_idx;
+    for (type_idx = 0; type_idx < UCT_UD_COMET_COLL_TYPE_LAST; type_idx++) {
+        comet_ep->header[type_idx].table_id = addr->table_id[type_idx];
+    }
+
+    return iface->super_connect(ep, dev_addr, ep);
+}
+
+static unsigned
+uct_ud_comet_iface_progress(uct_iface_h tl_iface)
 {
     uct_ud_comet_iface_t *iface = ucs_derived_of(tl_iface, uct_ud_comet_iface_t);
 
@@ -66,21 +86,19 @@ static unsigned uct_ud_comet_iface_progress(uct_iface_h tl_iface)
     return iface->super_progress(tl_iface); /* uct_ud_mlx5_iface_progress */
 }
 
-ucs_status_t uct_ud_comet_ep_send(uct_ep_h tl_ep, uint8_t id, const void *header,
-                                unsigned header_length, const uct_iov_t *iov,
-                                size_t iovcnt, unsigned flags,
-                                uct_completion_t *comp)
+static ucs_status_t
+uct_ud_comet_ep_am_zcopy(uct_ep_h tl_ep, uint8_t id, const void *header,
+                         unsigned header_length, const uct_iov_t *iov,
+                         size_t iovcnt, unsigned flags,
+                         uct_completion_t *comp)
 {
-#if 0
-    uct_ud_mlx5_ep_t *ep = ucs_derived_of(tl_ep, uct_ud_mlx5_ep_t);
-#endif
-    uct_ud_comet_iface_t *iface = ucs_derived_of(tl_ep->iface,
-                                                    uct_ud_comet_iface_t);
+    uct_ud_comet_ep_t *comet_ep  = ucs_derived_of(ep, uct_ud_comet_ep_t);
+    struct comet_packet_header *packet_header = iface->tables[id].;
+    uct_ud_comet_iface_t *iface = ucs_derived_of(tl_ep->iface, uct_ud_comet_iface_t);
     uint64_t tag = 0; // Shuki: TODO - Unknown.
     register uint64_t comet_prefix = (uint64_t)tag;
-    struct comet_packet_header *packet_header = (struct comet_packet_header *)iov[0].buffer;
+    uint8_t slot_id = iface->my_group_index;
     uint32_t table_index        = iovcnt;     /* WARNING: parameter type abuse*/
-    uint8_t slot_id = 0; // Shuki: TODO - Unknown.
 
     /* Sanity checks */
     ucs_assert(comet_prefix != 0);
@@ -98,11 +116,10 @@ ucs_status_t uct_ud_comet_ep_send(uct_ep_h tl_ep, uint8_t id, const void *header
     return UCS_OK;
 }
 
-ucs_status_t uct_ud_comet_iface_tag_recv_zcopy(uct_iface_h iface, uct_tag_t tag,
-                                               uct_tag_t tag_mask,
-                                               const uct_iov_t *iov,
-                                               size_t iovcnt,
-                                               uct_tag_context_t *ctx)
+static ucs_status_t
+uct_ud_comet_iface_tag_recv_zcopy(uct_iface_h iface, uct_tag_t tag,
+                                  uct_tag_t tag_mask, const uct_iov_t *iov,
+                                  size_t iovcnt, uct_tag_context_t *ctx)
 {
     uct_ud_comet_iface_t *comet = ucs_derived_of(iface, uct_ud_comet_iface_t);
     uint64_t comet_prefix       = (uint64_t)tag;
@@ -132,17 +149,31 @@ ucs_status_t uct_ud_comet_iface_tag_recv_zcopy(uct_iface_h iface, uct_tag_t tag,
     return ret ? UCS_ERR_IO_ERROR : UCS_OK;
 }
 
-static void ud_comet_ops_mlx5_reuse_initialize(uct_ud_comet_iface_t *comet_iface,
-	uct_ud_iface_ops_t *ops)
+static UCS_CLASS_CLEANUP_FUNC(uct_ud_comet_iface_t)
 {
-    ops->super.super.iface_close = UCS_CLASS_DELETE_FUNC_NAME(uct_ud_comet_iface_t);
-    ops->super.super.iface_progress = uct_ud_comet_iface_progress;
-    ops->super.super.iface_tag_recv_zcopy = uct_ud_comet_iface_tag_recv_zcopy;
+    /* Close COMET lib reference */
+    ucs_assert(self->comet_ref != NULL);
+    comet_close(self->comet_ref);
+}
 
-    if (comet_iface->super_uct_ud_ep_send == NULL) {
-    	comet_iface->super_uct_ud_ep_send = ops->super.super.ep_am_zcopy;
-    }
-    ops->super.super.ep_am_zcopy = uct_ud_comet_ep_send;
+static void
+ud_comet_ops_mlx5_reuse_initialize(uct_ud_comet_iface_t *comet_iface)
+{
+    uct_iface_ops_t *ops  = &comet_iface->super.super.super.super.super.ops;
+
+    /* Store old function pointers */
+    comet_iface->super_progress = ops->iface_progress;
+    comet_iface->super_get_addr = ops->ep_get_address;
+    comet_iface->super_connect  = ops->ep_connect;
+    comet_iface->super_am_zcopy = ops->ep_am_zcopy;
+
+    /* Replace with new function pointers */
+    ops->iface_close            = UCS_CLASS_DELETE_FUNC_NAME(uct_ud_comet_iface_t);
+    ops->iface_progress         = uct_ud_comet_iface_progress;
+    ops->ep_get_address         = uct_ud_comet_ep_get_address;
+    ops->ep_connect             = uct_ud_comet_ep_connect_to_ep;
+    ops->iface_tag_recv_zcopy   = uct_ud_comet_iface_tag_recv_zcopy;
+    ops->ep_am_zcopy            = uct_ud_comet_ep_am_zcopy;
 }
 
 static UCS_CLASS_INIT_FUNC(uct_ud_comet_iface_t,
@@ -155,8 +186,7 @@ static UCS_CLASS_INIT_FUNC(uct_ud_comet_iface_t,
             ucs_derived_of(tl_config, uct_ud_comet_iface_config_t);
     UCS_CLASS_CALL_SUPER_INIT(uct_ud_mlx5_iface_t, md,
                               worker, params, &config->super.super.super);
-    self->super_progress = self->super.super.super.super.super.ops.iface_progress;
-    ud_comet_ops_mlx5_reuse_initialize(self, &uct_ud_comet_iface_ops);
+    ud_comet_ops_mlx5_reuse_initialize(self);
 
     /* Get the attributes of this MD for connection establishment later */
     ucs_status_t status = uct_mm_md_query(md, &self->md_attr);
@@ -197,18 +227,7 @@ static UCS_CLASS_INIT_FUNC(uct_ud_comet_iface_t,
     return UCS_OK;
 }
 
-static UCS_CLASS_CLEANUP_FUNC(uct_ud_comet_iface_t)
-{
-    /* Close COMET lib reference */
-    ucs_assert(self->comet_ref != NULL);
-    comet_close(self->comet_ref);
-}
-
 UCS_CLASS_DEFINE(uct_ud_comet_iface_t, uct_ud_mlx5_iface_t);
-
-static UCS_CLASS_DEFINE_NEW_FUNC(uct_ud_comet_iface_t, uct_iface_t, uct_md_h,
-                                 uct_worker_h, const uct_iface_params_t*,
-                                 const uct_iface_config_t*);
 
 static ucs_status_t
 uct_ud_comet_query_resources(uct_md_h md,

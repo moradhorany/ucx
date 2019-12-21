@@ -29,10 +29,12 @@ typedef struct {
 
 enum uct_ud_comet_coll_type {
     UCT_UD_COMET_COLL_TYPE_REDUCE    = COMET_TABLE_OPERATION_REDUCE,
-    UCT_UD_COMET_COLL_TYPE_ALLTOALL  = COMET_TABLE_OPERATION_ALLTOALL
+    UCT_UD_COMET_COLL_TYPE_ALLTOALL  = COMET_TABLE_OPERATION_ALLTOALL,
+
+    UCT_UD_COMET_COLL_TYPE_LAST
 };
 
-typedef struct uct_ud_comet_table {
+typedef union uct_ud_comet_table {
     volatile uint64_t           incoming_prefix;  /* Prefix is placed here upon completion */
     enum uct_ud_comet_coll_type collective_type;  /* Type of collective set for this table */
     void*                       incoming_data_va; /* Virtual address to write the payload */
@@ -49,16 +51,34 @@ typedef struct uct_tl_comet_device_resource {
     const struct comet_capabilities *comet_capabilities_p; /* Pointer to COMET capabilities */
 } uct_tl_comet_device_resource_t;
 
-typedef uct_ud_mlx5_ep_t uct_comet_ep_t;
+typedef struct uct_ud_comet_ep_addr {
+    uct_ud_ep_addr_t super;
+
+    uint16_t         table_id[UCT_UD_COMET_COLL_TYPE_LAST];
+} uct_ud_comet_ep_addr_t;
+
+typedef struct uct_ud_comet_ep {
+    uct_ud_mlx5_ep_t super;
+
+    /* Header for sending comet packets */
+    struct comet_packet_header header[UCT_UD_COMET_COLL_TYPE_LAST];
+} uct_ud_comet_ep_t;
 
 typedef struct uct_ud_comet_iface {
     uct_ud_mlx5_iface_t   super;
+
+    /* For functions in need of calling their super-class equivalent: */
     unsigned            (*super_progress)(uct_iface_h tl_iface);
-    /* Super function for uct_ud_ep_send() */
-    ucs_status_t 		(*super_uct_ud_ep_send)(uct_ep_h tl_ep, uint8_t id, const void *header,
-                                    unsigned header_length, const uct_iov_t *iov,
-                                    size_t iovcnt, unsigned flags,
-                                    uct_completion_t *comp);
+    ucs_status_t        (*super_get_addr)(uct_ep_h ep, uct_ep_addr_t *addr);
+    ucs_status_t        (*super_connect) (uct_ep_h ep,
+                                          const uct_device_addr_t *dev_addr,
+                                          const uct_ep_addr_t *ep_addr);
+    ucs_status_t 		(*super_am_zcopy)(uct_ep_h tl_ep, uint8_t id,
+                                          const void *header,
+                                          unsigned header_length,
+                                          const uct_iov_t *iov,
+                                          size_t iovcnt, unsigned flags,
+                                          uct_completion_t *comp);
 
     uint32_t              sm_proc_cnt;         /* provided PPN information */
     uct_md_attr_t         md_attr;             /* memory domain attributes */

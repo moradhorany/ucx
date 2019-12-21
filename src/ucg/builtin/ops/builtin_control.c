@@ -29,6 +29,15 @@ void ucg_builtin_init_reduce(ucg_builtin_op_t *op)
 {
     ucg_builtin_op_step_t *step = &op->steps[0];
     memcpy(step->recv_buffer, step->send_buffer, step->buffer_length);
+
+#if HAVE_COMET_HW_UD
+    if (is_comet) {
+        /* Set the incoming buffer, and config the table*/
+        uint8_t comet_table_id;
+        ep->iface_tag_recv_zcopy(&table_id);
+        step->am_id = table_id;
+    }
+#endif
 }
 
 /* Alltoall Bruck phase 1/3: shuffle the data */
@@ -98,7 +107,7 @@ void ucg_builtin_calc_scatter(ucg_builtin_request_t *req, uint8_t *send_count,
     ucg_builtin_plan_t *plan    = ucs_derived_of(req->op->super.plan, ucg_builtin_plan_t);
     ucg_builtin_op_step_t *step = req->step;
     *send_count                 = step->phase->ep_cnt;
-    *base_offset                = step->buffer_length * plan->super.my_index;
+    *base_offset                = step->buffer_length * step->phase. plan->super.my_index;
     *item_interval              = step->buffer_length;
 }
 
