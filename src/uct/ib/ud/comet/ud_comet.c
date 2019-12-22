@@ -39,11 +39,11 @@ extern UCS_CLASS_INIT_FUNC(uct_ud_mlx5_iface_t,
 static ucs_status_t
 uct_ud_comet_ep_get_address(uct_ep_h ep, uct_ep_addr_t *ep_addr)
 {
-    // uct_ud_comet_iface_t *iface  = ucs_derived_of(ep->iface, uct_ud_comet_iface_t);
+     uct_ud_comet_iface_t *iface  = ucs_derived_of(ep->iface, uct_ud_comet_iface_t);
     uct_ud_comet_ep_t *comet_ep  = ucs_derived_of(ep, uct_ud_comet_ep_t);
     uct_ud_comet_ep_addr_t *addr = ucs_derived_of(ep_addr, uct_ud_comet_ep_addr_t);
 
-    memcpy(&ep_addr->caps, iface->caps, sizeof(caps));
+    memcpy(&addr->comet_device_capabilities, &iface->comet_device_capabilities, sizeof(iface->comet_device_capabilities));
 
     unsigned type_idx;
     for (type_idx = 0; type_idx < UCT_UD_COMET_COLL_TYPE_LAST; type_idx++) {
@@ -167,7 +167,8 @@ static UCS_CLASS_CLEANUP_FUNC(uct_ud_comet_iface_t)
 static ucs_status_t uct_ud_comet_iface_query(uct_iface_h tl_iface,
                                              uct_iface_attr_t *iface_attr)
 {
-    ucs_status_t status = ops->super_query(tl_iface, iface_attr);
+    uct_ud_comet_iface_t *comet = ucs_derived_of(tl_iface, uct_ud_comet_iface_t);
+    ucs_status_t status = comet->super_iface_query(tl_iface, iface_attr);
     if (status != UCS_OK) {
         return status;
     }
@@ -188,7 +189,7 @@ ud_comet_ops_mlx5_reuse_initialize(uct_ud_comet_iface_t *comet_iface)
     comet_iface->super_get_addr = ops->ep_get_address;
     comet_iface->super_connect  = ops->ep_connect_to_ep;
     comet_iface->super_uct_ud_ep_am_zcopy = ops->ep_am_zcopy;
-    comet_iface->super_query    = ops->iface_query;
+    comet_iface->super_iface_query    = ops->iface_query;
 
     /* Replace with new function pointers */
     ops->iface_query            = uct_ud_comet_iface_query;
@@ -231,12 +232,13 @@ static UCS_CLASS_INIT_FUNC(uct_ud_comet_iface_t,
 
     /* Query the COMET device capabilities */
     unsigned num_comet_devices;
-    const struct comet_capabilities *comet_devices;
-    ret = comet_query_capabilities(&comet_devices, &num_comet_devices);
+    const struct comet_capabilities *comet_caps;
+    ret = comet_query_capabilities(&comet_caps, &num_comet_devices);
     if (ret != 0) {
         ucs_error("Failed to query COMET capabilities");
         return UCS_ERR_NO_RESOURCE;
     }
+    memcpy(&self->comet_device_capabilities, comet_caps, sizeof(self->comet_device_capabilities));
 
     /* Generate per-table information based on the COMET device capabilities */
     self->tables = comet_alloc(self->comet_ref,

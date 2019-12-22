@@ -82,6 +82,8 @@ typedef struct uct_ud_comet_iface {
                                           const uct_iov_t *iov,
                                           size_t iovcnt, unsigned flags,
                                           uct_completion_t *comp);
+    ucs_status_t        (*super_iface_query)(uct_iface_h iface,
+                                          uct_iface_attr_t *iface_attr);
 
     uint32_t              sm_proc_cnt;         /* provided PPN information */
     uct_md_attr_t         md_attr;             /* memory domain attributes */
@@ -90,6 +92,7 @@ typedef struct uct_ud_comet_iface {
     uint32_t              table_cnt;           /* number of tables */
     uct_ud_comet_table_t *tables;              /* per-table information */
     uint8_t				  my_group_index;	   /* COMET slot-id */
+    struct comet_capabilities comet_device_capabilities; /* COMET capabilities */
 } uct_ud_comet_iface_t;
 
 int
