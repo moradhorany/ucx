@@ -82,7 +82,16 @@ ucg_builtin_choose_type(enum ucg_collective_modifiers flags,
         return UCG_PLAN_RECURSIVE;
     }
 
+    /* MPI_Alltoall */
+    ucs_assert(flags == 0);
+#if HAVE_COMET_HW_UD
     return UCG_PLAN_TREE_FANIN_FANOUT;
+#else
+    if (ucs_popcount(group_size) > 1) {
+        return UCG_PLAN_ALLTOALL_BRCUK;
+    }
+    return UCG_PLAN_ALLTOALL_AGGREGATION;
+#endif
 }
 
 UCS_PROFILE_FUNC(ucs_status_t, ucg_builtin_am_handler,
@@ -337,7 +346,19 @@ static ucs_status_t ucg_builtin_plan(ucg_plan_component_t *plan_component,
                 plan_component->plan_config, builtin_ctx->group_params, coll_type, &plan);
         break;
 
-    default:
+    case UCG_PLAN_ALLTOALL_BRCUK:
+        status = ucg_builtin_bruck_create(builtin_ctx, plan_topo_type,
+                plan_component->plan_config, builtin_ctx->group_params, coll_type, &plan);
+        break;
+
+    case UCG_PLAN_PAIRWISE:
+        status = ucg_builtin_pairwise_create(builtin_ctx, plan_topo_type,
+                plan_component->plan_config, builtin_ctx->group_params, coll_type, &plan);
+        break;
+
+    case UCG_PLAN_TREE_FANIN:
+    case UCG_PLAN_TREE_FANOUT:
+    case UCG_PLAN_TREE_FANIN_FANOUT:
         status = ucg_builtin_tree_create(builtin_ctx, plan_topo_type,
                 plan_component->plan_config, builtin_ctx->group_params, coll_type, &plan);
     }
