@@ -263,11 +263,18 @@ uct_ud_comet_query_resources(uct_md_h md,
 	   - 1 x mlnx NIC
 	   - 1 x COMET FPGA.
      */
-    if ((num_comet_devices == 0) || (*num_resources_p == 0)) {
-        ucs_debug("%s - Not enough devices: num_comet_devices=%u, num_tl_devices=%u\n",
+    if (*num_resources_p == 0) {
+        ucs_debug("%s - Not enough MLX5 devices: num_comet_devices=%u, num_tl_devices=%u\n",
                 __func__, num_comet_devices, *num_resources_p);
         status = UCS_ERR_NO_RESOURCE;
         goto exit_error_free_resources;
+    }
+
+    /* No COMET device? ==> CLIENT mode */
+    if (num_comet_devices == 0) {
+        ucs_debug("%s - COMET device not found, initializing UD_COMET as client\n",
+                __func__);
+    	return status;
     }
 
     tl_devices = *resources_p;
