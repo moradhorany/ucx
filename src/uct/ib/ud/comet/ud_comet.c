@@ -26,11 +26,6 @@ static ucs_config_field_t uct_ud_comet_iface_config_table[] = {
   {NULL}
 };
 
-/* Indicates that UD_COMET has been initialized successfully */
-static int g_ud_comet_initialized = 0;
-
-static UCS_CLASS_DEFINE_DELETE_FUNC(uct_ud_comet_iface_t, uct_iface_t);
-
 extern UCS_CLASS_INIT_FUNC(uct_ud_mlx5_iface_t,
                            uct_md_h md, uct_worker_h worker,
                            const uct_iface_params_t *params,
@@ -39,19 +34,18 @@ extern UCS_CLASS_INIT_FUNC(uct_ud_mlx5_iface_t,
 static ucs_status_t
 uct_ud_comet_ep_get_address(uct_ep_h ep, uct_ep_addr_t *ep_addr)
 {
-     uct_ud_comet_iface_t *iface  = ucs_derived_of(ep->iface, uct_ud_comet_iface_t);
     uct_ud_comet_ep_t *comet_ep  = ucs_derived_of(ep, uct_ud_comet_ep_t);
+    uct_ud_comet_iface_t *iface  = ucs_derived_of(ep->iface, uct_ud_comet_iface_t);
     uct_ud_comet_ep_addr_t *addr = ucs_derived_of(ep_addr, uct_ud_comet_ep_addr_t);
 
-    memcpy(&addr->comet_device_capabilities, &iface->comet_device_capabilities, sizeof(iface->comet_device_capabilities));
+    memcpy(&addr->device_caps, &iface->device_caps, sizeof(iface->device_caps));
 
     unsigned type_idx;
     for (type_idx = 0; type_idx < UCT_UD_COMET_COLL_TYPE_LAST; type_idx++) {
         comet_ep->header[type_idx].table_id = addr->table_id[type_idx];
     }
 
-    // Shuki: Should we call super here?
-    return UCS_OK;
+    return iface->super_get_addr(ep, ep_addr);
 }
 
 static ucs_status_t
@@ -100,28 +94,21 @@ uct_ud_comet_ep_am_zcopy(uct_ep_h tl_ep, uint8_t id, const void *header,
                          size_t iovcnt, unsigned flags,
                          uct_completion_t *comp)
 {
-    uct_ud_comet_iface_t *iface = ucs_derived_of(tl_ep->iface, uct_ud_comet_iface_t);
-    uct_ud_comet_ep_t *comet_ep  = ucs_derived_of(tl_ep, uct_ud_comet_ep_t);
-    struct comet_packet_header *packet_header = &comet_ep->header[0];
-    uint64_t tag = 0; // Shuki: TODO - Unknown.
-    register uint64_t comet_prefix = (uint64_t)tag;
-    uint8_t slot_id = iface->my_group_index;
-    uint32_t table_index        = iovcnt;     /* WARNING: parameter type abuse*/
-
-    /* Sanity checks */
-    ucs_assert(comet_prefix != 0);
-    //ucs_assert(tag_mask == (uct_tag_t)-1);
+    uct_ud_comet_iface_t *iface        = ucs_derived_of(tl_ep->iface, uct_ud_comet_iface_t);
+    uct_ud_comet_ep_t *comet_ep        = ucs_derived_of(tl_ep, uct_ud_comet_ep_t);
+    struct comet_packet_header *packet = &comet_ep->header[0];
+    uint64_t prefix                    = *(uint64_t*)header;
+    uint8_t slot_id                    = iface->my_group_index;
+    uint8_t table_id                   = id; /* WARNING: parameter type abuse*/
 
     /* Assume enough space in SGE[0] for the COMET header*/
-    comet_packet_header_init(packet_header,
-       (uint8_t)table_index, slot_id, comet_prefix);
+    comet_packet_header_init(packet, table_id, slot_id, prefix);
+    ucs_assert(iface->comet_ref == NULL);
+    ucs_assert(prefix != 0);
 
     /* Call super function */
-    iface->super_uct_ud_ep_am_zcopy(tl_ep, id, header,
-            header_length, iov, iovcnt, flags,
-            comp);
-
-    return UCS_OK;
+    return iface->super_uct_ud_ep_am_zcopy(tl_ep, UCT_UD_COMET_AM_ID, packet,
+            sizeof(struct comet_packet_header), iov, 1, flags, comp);
 }
 
 static ucs_status_t
@@ -142,6 +129,7 @@ uct_ud_comet_iface_tag_recv_zcopy(uct_iface_h iface, uct_tag_t tag,
     ucs_assert(comet_prefix != 0);
     ucs_assert(tag_mask == (uct_tag_t)-1);
     ucs_assert(ctx->completed_cb != NULL);
+    ucs_assert(comet->comet_ref != NULL);
 
     table->tag_ctx = *ctx;
     table->data_length = iov[0].length;
@@ -159,10 +147,16 @@ uct_ud_comet_iface_tag_recv_zcopy(uct_iface_h iface, uct_tag_t tag,
 
 static UCS_CLASS_CLEANUP_FUNC(uct_ud_comet_iface_t)
 {
-    /* Close COMET lib reference */
-    ucs_assert(self->comet_ref != NULL);
-    comet_close(self->comet_ref);
+    if (self->device_caps) {
+        free((void*)self->device_caps);
+    }
+
+    if (self->comet_ref) {
+        comet_close(self->comet_ref);
+    }
 }
+
+static UCS_CLASS_DECLARE_DELETE_FUNC(uct_ud_comet_iface_t, uct_iface_t);
 
 static ucs_status_t uct_ud_comet_iface_query(uct_iface_h tl_iface,
                                              uct_iface_attr_t *iface_attr)
@@ -212,6 +206,8 @@ static UCS_CLASS_INIT_FUNC(uct_ud_comet_iface_t,
     UCS_CLASS_CALL_SUPER_INIT(uct_ud_mlx5_iface_t, md,
                               worker, params, &config->super.super.super);
     ud_comet_ops_mlx5_reuse_initialize(self);
+    self->device_caps = NULL;
+    self->comet_ref = NULL;
 
     /* Get the attributes of this MD for connection establishment later */
     ucs_status_t status = uct_mm_md_query(md, &self->md_attr);
@@ -219,133 +215,92 @@ static UCS_CLASS_INIT_FUNC(uct_ud_comet_iface_t,
         return status;
     }
 
-    /* Store relevant parameters */
-    self->comet_device_index = config->device_index;
-    self->sm_proc_cnt = params->node_info.proc_cnt;
+    /* Query the COMET device capabilities */
+    uint32_t num_comet_devices;
+    int ret = comet_query_capabilities(&self->device_caps, &num_comet_devices);
+    if (ret != 0) {
+        ucs_error("Failed to query COMET capabilities");
+        return UCS_ERR_NO_RESOURCE;
+    }
+
+    /* If no devices were found - this is a COMET client */
+    if (num_comet_devices == 0) {
+        return UCS_OK;
+    }
+
+    if (config->device_index >= num_comet_devices) {
+        ucs_error("Failed to choose the requested COMET device");
+        return UCS_ERR_NO_DEVICE;
+    }
 
     /* Open device driver */
-    int ret = comet_init(self->comet_device_index, &self->comet_ref);
+    ret = comet_init(config->device_index, &self->comet_ref);
     if ((ret != 0) || (self->comet_ref == NULL)) {
         ucs_debug("Failed to initialize COMET");
         return UCS_ERR_NO_MEMORY;
     }
 
-    /* Query the COMET device capabilities */
-    unsigned num_comet_devices;
-    const struct comet_capabilities *comet_caps;
-    ret = comet_query_capabilities(&comet_caps, &num_comet_devices);
-    if (ret != 0) {
-        ucs_error("Failed to query COMET capabilities");
-        return UCS_ERR_NO_RESOURCE;
-    }
-    memcpy(&self->comet_device_capabilities, comet_caps, sizeof(self->comet_device_capabilities));
-
     /* Generate per-table information based on the COMET device capabilities */
+    // TODO: support more than one COMET device?
+    self->table_cnt = self->device_caps[0].num_tables;
     self->tables = comet_alloc(self->comet_ref,
-    		num_comet_devices * sizeof(uct_ud_comet_table_t));
+            self->table_cnt * sizeof(uct_ud_comet_table_t));
+    if (self->tables == NULL) {
+        ucs_error("Failed to allocate COMET memory");
+        return UCS_ERR_NO_MEMORY;
+    }
+
     unsigned idx;
-    for (idx = 0; idx < num_comet_devices; idx++) {
+    for (idx = 0; idx < self->table_cnt; idx++) {
         self->tables[idx].collective_type  = UCT_UD_COMET_COLL_TYPE_REDUCE; // TODO: detect
         self->tables[idx].incoming_data_va = NULL;
         self->tables[idx].incoming_prefix  = 0;
     }
 
-    /* UD_COMET initialized */
-    g_ud_comet_initialized = 1;
-
+    self->group_proc_cnt = params->node_info.proc_cnt;
+    self->my_group_index = params->node_info.proc_idx;
     return UCS_OK;
 }
 
-UCS_CLASS_DEFINE(uct_ud_comet_iface_t, uct_ud_mlx5_iface_t);
+UCS_CLASS_DEFINE(uct_ud_comet_iface_t, uct_ud_iface_t);
+static UCS_CLASS_DEFINE_NEW_FUNC(uct_ud_comet_iface_t, uct_iface_t, uct_md_h,
+                                 uct_worker_h, const uct_iface_params_t*,
+                                 const uct_iface_config_t*);
+static UCS_CLASS_DEFINE_DELETE_FUNC(uct_ud_comet_iface_t, uct_iface_t);
 
 static ucs_status_t
 uct_ud_comet_query_resources(uct_md_h md,
                             uct_tl_resource_desc_t **resources_p,
                             unsigned *num_resources_p)
 {
-    ucs_status_t status = UCS_OK;
-    int ret;
-    const struct comet_capabilities *comet_devices;
-    uint32_t num_comet_devices;
-    uct_tl_resource_desc_t *tl_devices = NULL;
-    uct_tl_comet_device_resource_t *comet_dev_resource;
-
-    /* TODO take transport overhead into account */
-    status = uct_ib_device_query_tl_resources(&ucs_derived_of(md, uct_ib_md_t)->dev,
-                        "ud_mlx5", UCT_IB_DEVICE_FLAG_MLX5_PRM,
-                        resources_p, num_resources_p);
+    /* Query (MLX5, accelerated) UD resources */
+    ucs_status_t status = uct_ib_device_query_tl_resources(&ucs_derived_of(md, uct_ib_md_t)->dev,
+            UCT_UD_COMET_TL_NAME, UCT_IB_DEVICE_FLAG_MLX5_PRM, resources_p, num_resources_p);
     if (status != UCS_OK) {
         return status;
     }
+    /* TODO: take COMET overhead into account in the resource latency estimation... */
 
-    ret = comet_query_capabilities(&comet_devices, &num_comet_devices);
-    if (ret != 0) {
-        ucs_debug("Error querying COMET capabilities ret=%d", ret);
-        return UCS_ERR_NO_RESOURCE;
+    if (*num_resources_p == 0) {
+        ucs_debug("MLX5 UD devices not found for COMET");
+        return UCS_ERR_NO_DEVICE;
     }
 
-    /*
-	   Cannot initialize a COMET device without at least
-	   - 1 x mlnx NIC
-	   - 1 x COMET FPGA.
-     */
-    if (*num_resources_p == 0) {
-        ucs_debug("%s - Not enough MLX5 devices: num_comet_devices=%u, num_tl_devices=%u\n",
-                __func__, num_comet_devices, *num_resources_p);
-        status = UCS_ERR_NO_RESOURCE;
-        goto exit_error_free_resources;
+    const struct comet_capabilities *comet_devices;
+    int ret = comet_query_capabilities(&comet_devices, (uint32_t*)&num_resources_p);
+    if (ret != 0) {
+        ucs_error("Failed to query COMET capabilities");
+        *num_resources_p = 0;
+        return UCS_ERR_NO_DEVICE;
     }
 
     /* No COMET device? ==> CLIENT mode */
-    if (num_comet_devices == 0) {
-        ucs_debug("%s - COMET device not found, initializing UD_COMET as client\n",
-                __func__);
-        status = UCS_OK;
-    	goto comet_init_successful_return;
+    if (*num_resources_p == 0) {
+        ucs_debug("COMET device not found, initializing UD_COMET as client");
     }
 
-    tl_devices = *resources_p;
-    if (tl_devices == NULL) {
-        status = UCS_ERR_NO_MEMORY;
-        goto exit_error_free_resources;
-    }
-
-    /* Always use MLNX device index 0 for COMET */
-    comet_dev_resource = (uct_tl_comet_device_resource_t *)&tl_devices[0];
-
-    /* Initialize pointer to capabilities (comet_devices is always static) */
-    comet_dev_resource->comet_capabilities_p = &comet_devices[0];
-    comet_dev_resource->type = UCT_DEVICE_TYPE_ACC;
-    strcpy(&comet_dev_resource->tl_name[0], UCT_UD_COMET_TL_NAME);
-    strcpy(&comet_dev_resource->dev_name[0], "mlx5_1:1");
-
-    /* Return only 1 interface */
-    *num_resources_p = 1;
-
-comet_init_successful_return:
-    return status;
-
-exit_error_free_resources:
-    if (*resources_p != NULL) {
-        ucs_free(*resources_p);
-        *resources_p = NULL;
-    }
-
-    *num_resources_p = 0;
-
-    return status;
+    return UCS_OK;
 }
-
-int
-ud_comet_is_initialized(void)
-{
-	return g_ud_comet_initialized;
-}
-
-static UCS_CLASS_DEFINE_NEW_FUNC(uct_ud_comet_iface_t, uct_iface_t, uct_md_h,
-                                 uct_worker_h, const uct_iface_params_t*,
-                                 const uct_iface_config_t*);
-
 
 UCT_TL_COMPONENT_DEFINE(uct_ud_comet_tl,
                         uct_ud_comet_query_resources,

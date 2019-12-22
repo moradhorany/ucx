@@ -1552,7 +1552,7 @@ ucs_status_t ucp_worker_create(ucp_context_h context,
     /* Init extensions registered for this context */
     status = ucp_worker_init_extensions(worker);
     if (status != UCS_OK) {
-        goto err_close_mpools;
+        goto err_close_ifaces;
     }
 
     /* Open all resources as interfaces on this worker */
@@ -1584,10 +1584,6 @@ ucs_status_t ucp_worker_create(ucp_context_h context,
     *worker_p = worker;
     return UCS_OK;
 
-err_close_mpools:
-    ucs_mpool_cleanup(&worker->am_mp, 1);
-    ucs_mpool_cleanup(&worker->reg_mp, 1);
-    ucs_mpool_cleanup(&worker->rndv_frag_mp, 1);
 err_close_ifaces:
     ucp_worker_close_ifaces(worker);
     ucp_tag_match_cleanup(&worker->tm);

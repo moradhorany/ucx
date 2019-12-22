@@ -26,6 +26,7 @@ typedef struct {
 #define UCT_COMET_DEVICE_NAME_MAX (UCT_DEVICE_NAME_MAX - sizeof(const struct comet_capabilities *))
 
 #define UCT_UD_COMET_TL_NAME "ud_comet"
+#define UCT_UD_COMET_AM_ID (33) // TODO: Alex - set the ID to be some high num
 
 enum uct_ud_comet_coll_type {
     UCT_UD_COMET_COLL_TYPE_REDUCE    = COMET_TABLE_OPERATION_REDUCE,
@@ -43,27 +44,17 @@ typedef union uct_ud_comet_table {
     uct_tag_context_t           tag_ctx;          /* Tag context - for completion callbacks */
 } uct_ud_comet_table_t;
 
-typedef struct uct_tl_comet_device_resource {
-    uct_device_type_t type;                                /**< Device type */
-    char              tl_name[UCT_TL_NAME_MAX];            /**< Transport name */
-    char              dev_name[UCT_COMET_DEVICE_NAME_MAX]; /**< Hardware device name */
-
-    const struct comet_capabilities *comet_capabilities_p; /* Pointer to COMET capabilities */
-} uct_tl_comet_device_resource_t;
-
 typedef struct uct_ud_comet_ep_addr {
     uct_ud_ep_addr_t super;
 
-    /* COMET peer capabilites (sent from server to client) */
-    struct comet_capabilities comet_device_capabilities;
-
-    uint16_t         table_id[UCT_UD_COMET_COLL_TYPE_LAST];
+    struct comet_capabilities device_caps; /* COMET peer capabilities (sent from server to client) */
+    uint16_t                  table_id[UCT_UD_COMET_COLL_TYPE_LAST];
 } uct_ud_comet_ep_addr_t;
 
 typedef struct uct_ud_comet_ep {
     uct_ud_mlx5_ep_t super;
 
-    /* Header for sending comet packets */
+    /* Header for sending comet packets (faster) */
     struct comet_packet_header header[UCT_UD_COMET_COLL_TYPE_LAST];
 } uct_ud_comet_ep_t;
 
@@ -85,18 +76,15 @@ typedef struct uct_ud_comet_iface {
     ucs_status_t        (*super_iface_query)(uct_iface_h iface,
                                           uct_iface_attr_t *iface_attr);
 
-    uint32_t              sm_proc_cnt;         /* provided PPN information */
     uct_md_attr_t         md_attr;             /* memory domain attributes */
     void                 *comet_ref;           /* device reference / handle */
-    uint32_t              comet_device_index;  /* device index */
+    uint8_t               group_proc_cnt;      /* provided PPN information */
+    uint8_t               my_group_index;      /* COMET slot-id */
     uint32_t              table_cnt;           /* number of tables */
     uct_ud_comet_table_t *tables;              /* per-table information */
-    uint8_t				  my_group_index;	   /* COMET slot-id */
-    struct comet_capabilities comet_device_capabilities; /* COMET capabilities */
-} uct_ud_comet_iface_t;
 
-int
-ud_comet_is_initialized(void);
+    const struct comet_capabilities *device_caps; /* COMET capabilities */
+} uct_ud_comet_iface_t;
 
 #endif /* _UD_COMET_H_ */
 

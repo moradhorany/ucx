@@ -824,9 +824,13 @@ static UCS_CLASS_CLEANUP_FUNC(uct_ud_mlx5_iface_t)
 
 UCS_CLASS_DEFINE(uct_ud_mlx5_iface_t, uct_ud_iface_t);
 
-static UCS_CLASS_DEFINE_NEW_FUNC(uct_ud_mlx5_iface_t, uct_iface_t, uct_md_h,
-                                 uct_worker_h, const uct_iface_params_t*,
-                                 const uct_iface_config_t*);
+
+#if !defined(HAVE_COMET_HW_UD) // Need to re-use these ops in COMET
+static
+#endif
+UCS_CLASS_DEFINE_NEW_FUNC(uct_ud_mlx5_iface_t, uct_iface_t, uct_md_h,
+                          uct_worker_h, const uct_iface_params_t*,
+                          const uct_iface_config_t*);
 
 static UCS_CLASS_DEFINE_DELETE_FUNC(uct_ud_mlx5_iface_t, uct_iface_t);
 

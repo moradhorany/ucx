@@ -551,7 +551,7 @@ ucs_status_t ucg_plan_connect_net(ucg_groups_t *gctx, ucg_group_h group,
 
     uct_iface  = ucp_worker_iface(group->worker, gctx->ud_comet_tl_id)->iface;
     iface      = ucs_derived_of(uct_iface, uct_ud_comet_iface_t);
-    *sm_cnt    = group->params.member_count / iface->sm_proc_cnt;
+    *sm_cnt    = group->params.member_count;
     *ep_attr_p = ucp_worker_iface_get_attr(group->worker, gctx->ud_comet_tl_id);
     *md_p      = iface->super.super.super.super.md;
     *md_attr_p = &iface->md_attr;
