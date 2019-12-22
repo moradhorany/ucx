@@ -87,8 +87,8 @@ ucg_builtin_choose_type(enum ucg_collective_modifiers flags,
 #if HAVE_COMET_HW_UD
     return UCG_PLAN_TREE_FANIN_FANOUT;
 #else
-    if (ucs_popcount(group_size) > 1) {
-        return UCG_PLAN_ALLTOALL_BRUCK;
+    if (ucs_popcount(group_size) == 1) {
+        return UCG_PLAN_ALLTOALL_BRCUK;
     }
     return UCG_PLAN_ALLTOALL_AGGREGATION;
 #endif

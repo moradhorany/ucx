@@ -31,7 +31,6 @@ BEGIN_C_DECLS
 typedef void (*mpi_reduce_f)(void *mpi_op, char *src_buffer,
                              char *dst_buffer, unsigned dcount,
                              void* mpi_datatype);
-typedef void(*ucg_builtin_op_complete_cb_f)(void *complete_cb_arg);
 
 extern ucg_plan_component_t ucg_builtin_component;
 extern mpi_reduce_f ucg_builtin_mpi_reduce_cb;
@@ -80,8 +79,10 @@ enum ucg_builtin_op_step_flags {
 /* Definitions of several callback functions, used during an operation */
 typedef struct ucg_builtin_op ucg_builtin_op_t;
 typedef struct ucg_builtin_request ucg_builtin_request_t;
-typedef void         (*ucg_builtin_op_init_cb_t)  (ucg_builtin_op_t *op);
-typedef void         (*ucg_builtin_op_fini_cb_t)  (ucg_builtin_op_t *op);
+typedef void         (*ucg_builtin_op_init_cb_t)  (ucg_builtin_op_t *op,
+                                                   ucg_coll_id_t coll_id);
+typedef void         (*ucg_builtin_op_fini_cb_t)  (ucg_builtin_op_t *op,
+                                                   ucg_coll_id_t coll_id);
 typedef ucs_status_t (*ucg_builtin_op_optm_cb_t)  (ucg_builtin_op_t *op);
 typedef void         (*ucg_builtin_step_calc_cb_t)(ucg_builtin_request_t *req,
                                                    uint8_t *send_count,

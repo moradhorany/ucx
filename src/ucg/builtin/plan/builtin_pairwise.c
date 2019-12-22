@@ -18,7 +18,6 @@ ucs_status_t ucg_builtin_pairwise_create(ucg_builtin_group_ctx_t *ctx,
         const ucg_collective_type_t *coll_type,
         ucg_builtin_plan_t **plan_p)
 {
-	ucg_step_idx_t step_idx = 1; /* Shuki: TODO - Fix this */
     /* Calculate the number of pairwise steps */
     ucg_group_member_index_t proc_idx, proc_count = group_params->member_count;
 
@@ -47,7 +46,7 @@ ucs_status_t ucg_builtin_pairwise_create(ucg_builtin_group_ctx_t *ctx,
 
     /* Calculate the peers for each step */
     phase->method = UCG_PLAN_METHOD_PAIRWISE;
-    phase->step_index = step_idx;
+    phase->step_index = 1;
 
     for(proc_idx = 1; proc_idx < proc_count; proc_idx++) {
         /* Connect to receiver for second EP */

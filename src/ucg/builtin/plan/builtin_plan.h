@@ -16,8 +16,7 @@ enum ucg_builtin_plan_topology_type {
     UCG_PLAN_TREE_FANOUT,
     UCG_PLAN_TREE_FANIN_FANOUT,
     UCG_PLAN_ALLTOALL_BRUCK,
-    UCG_PLAN_PAIRWISE,
-    UCG_PLAN_LAST
+    UCG_PLAN_PAIRWISE
 };
 
 enum UCS_S_PACKED ucg_builtin_plan_method_type {
@@ -98,6 +97,20 @@ typedef struct ucg_builtin_tree_config {
 } ucg_builtin_tree_config_t;
 
 extern ucs_config_field_t ucg_builtin_tree_config_table[];
+
+ucs_status_t ucg_builtin_bruck_create(ucg_builtin_group_ctx_t *ctx,
+        enum ucg_builtin_plan_topology_type plan_topo_type,
+        const ucg_builtin_config_t *config,
+        const ucg_group_params_t *group_params,
+        const ucg_collective_type_t *coll_type,
+        ucg_builtin_plan_t **plan_p);
+
+ucs_status_t ucg_builtin_pairwise_create(ucg_builtin_group_ctx_t *ctx,
+        enum ucg_builtin_plan_topology_type plan_topo_type,
+        const ucg_builtin_config_t *config,
+        const ucg_group_params_t *group_params,
+        const ucg_collective_type_t *coll_type,
+        ucg_builtin_plan_t **plan_p);
 
 ucs_status_t ucg_builtin_tree_create(ucg_builtin_group_ctx_t *ctx,
         enum ucg_builtin_plan_topology_type plan_topo_type,

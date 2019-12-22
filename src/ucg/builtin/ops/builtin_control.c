@@ -8,6 +8,10 @@
 
 #include "builtin_ops.h"
 
+#if HAVE_COMET_HW_UD
+#include <uct/ib/ud/comet/ud_comet.h>
+#endif
+
 #ifndef MPI_IN_PLACE
 #define MPI_IN_PLACE ((void*)0x1)
 #endif
@@ -15,9 +19,9 @@
 /*
  * Below is a list of possible callback functions for operation initialization.
  */
-void ucg_builtin_init_dummy(ucg_builtin_op_t *op) {}
+void ucg_builtin_init_dummy(ucg_builtin_op_t *op, ucg_coll_id_t coll_id) {}
 
-void ucg_builtin_init_gather(ucg_builtin_op_t *op)
+void ucg_builtin_init_gather(ucg_builtin_op_t *op, ucg_coll_id_t coll_id)
 {
     ucg_builtin_op_step_t *step = &op->steps[0];
     size_t len = step->buffer_length;
@@ -25,28 +29,40 @@ void ucg_builtin_init_gather(ucg_builtin_op_t *op)
             step->send_buffer, len);
 }
 
-void ucg_builtin_init_reduce(ucg_builtin_op_t *op)
+void ucg_builtin_init_reduce(ucg_builtin_op_t *op, ucg_coll_id_t coll_id)
 {
-    ucg_builtin_op_step_t *step = &op->steps[0];
-    memcpy(step->recv_buffer, step->send_buffer, step->buffer_length);
+    /* Skip unless root */
+    if (op->super.params.type.root != op->super.plan->my_index) {
+        return;
+    }
 
 #if HAVE_COMET_HW_UD
-#if 0
-    if (ud_comet_is_initialized()) {
-        /* Set the incoming buffer, and config the table*/
-        uint8_t comet_table_id;
-        ep->iface_tag_recv_zcopy(&table_id);
-        uct_iface_h iface, uct_tag_t tag,
-                                          uct_tag_t tag_mask, const uct_iov_t *iov,
-                                          size_t iovcnt, uct_tag_context_t *ctx)
-        step->am_id = table_id;
-    }
-#endif
+    /* Prepare information for COMET */
+    uct_tag_context_t tag_ctx = {
+            .completed_cb = 0
+    };
+    *((int*)&tag_ctx.priv[0]) = 0;
+
+    /* Set the incoming buffer, and config the table*/
+    ucg_builtin_op_step_t *comet_step = &op->steps[0];
+    uct_iov_t iov = {
+            .buffer = comet_step->send_buffer,
+            .length = comet_step->buffer_length,
+            .memh   = comet_step->zcopy.memh
+    };
+
+    ucs_assert(comet_step->phase->ep_cnt == 1);
+    comet_step->am_id = COMET_TABLE_OPERATION_REDUCE;
+    comet_step->uct_iface->ops.iface_tag_recv_zcopy(comet_step->uct_iface,
+            coll_id, (uct_tag_t)-1, &iov, 1, &tag_ctx);
+#else
+    ucg_builtin_op_step_t *step = &op->steps[0];
+    memcpy(step->recv_buffer, step->send_buffer, step->buffer_length);
 #endif
 }
 
 /* Alltoall Bruck phase 1/3: shuffle the data */
-void ucg_builtin_init_alltoall(ucg_builtin_op_t *op)
+void ucg_builtin_init_alltoall(ucg_builtin_op_t *op, ucg_coll_id_t coll_id)
 {
     ucg_builtin_op_step_t *step = &op->steps[0];
     int bsize                   = step->buffer_length;
@@ -78,7 +94,7 @@ void ucg_builtin_calc_alltoall(ucg_builtin_request_t *req, uint8_t *send_count,
 }
 
 /* Alltoall Bruck phase 3/3: shuffle the data */
-void ucg_builtin_fini_alltoall(ucg_builtin_op_t *op)
+void ucg_builtin_fini_alltoall(ucg_builtin_op_t *op, ucg_coll_id_t coll_id)
 {
     ucg_builtin_op_step_t *step = &op->steps[0];
     int bsize                   = step->buffer_length;
@@ -92,7 +108,7 @@ void ucg_builtin_fini_alltoall(ucg_builtin_op_t *op)
     }
 }
 
-void ucg_builtin_init_scatter(ucg_builtin_op_t *op)
+void ucg_builtin_init_scatter(ucg_builtin_op_t *op, ucg_coll_id_t coll_id)
 {
     ucg_builtin_plan_t *plan    = ucs_derived_of(op->super.plan, ucg_builtin_plan_t);
     void *dst                   = op->steps[plan->phs_cnt - 1].recv_buffer;
@@ -530,7 +546,7 @@ ucs_status_t ucg_builtin_op_trigger(ucg_op_t *op, ucg_coll_id_t coll_id, ucg_req
      * local data has to be aggregated along with the incoming data. In others,
      * some shuffle is required once before starting (e.g. Bruck algorithms).
      */
-    builtin_op->init_cb(builtin_op);
+    builtin_op->init_cb(builtin_op, coll_id);
 
     /* Consider optimization, if this operation is used often enough */
     if (ucs_unlikely(--builtin_op->opt_cnt == 0)) {
