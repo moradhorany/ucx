@@ -37,24 +37,28 @@ void ucg_builtin_init_reduce(ucg_builtin_op_t *op, ucg_coll_id_t coll_id)
     }
 
 #if HAVE_COMET_HW_UD
-    /* Prepare information for COMET */
-    uct_tag_context_t tag_ctx = {
-            .completed_cb = 0
-    };
-    *((int*)&tag_ctx.priv[0]) = 0;
+    // TODO: Alex: make this check detect COMET specifically
+    if (op->steps[0].uct_iface->ops.iface_tag_recv_zcopy) {
+        /* Prepare information for COMET */
+        uct_tag_context_t tag_ctx = {
+                .completed_cb = 0
+        };
+        *((int*)&tag_ctx.priv[0]) = 0;
 
-    /* Set the incoming buffer, and config the table*/
-    ucg_builtin_op_step_t *comet_step = &op->steps[0];
-    uct_iov_t iov = {
-            .buffer = comet_step->send_buffer,
-            .length = comet_step->buffer_length,
-            .memh   = comet_step->zcopy.memh
-    };
+        /* Set the incoming buffer, and config the table*/
+        ucg_builtin_op_step_t *comet_step = &op->steps[0];
+        uct_iov_t iov = {
+                .buffer = comet_step->send_buffer,
+                .length = comet_step->buffer_length,
+                .memh   = comet_step->zcopy.memh
+        };
 
-    ucs_assert(comet_step->phase->ep_cnt == 1);
-    comet_step->am_id = COMET_TABLE_OPERATION_REDUCE;
-    comet_step->uct_iface->ops.iface_tag_recv_zcopy(comet_step->uct_iface,
-            coll_id, (uct_tag_t)-1, &iov, 1, &tag_ctx);
+        ucs_assert(comet_step->phase->ep_cnt == 1);
+        comet_step->am_id = COMET_TABLE_OPERATION_REDUCE;
+        comet_step->uct_iface->ops.iface_tag_recv_zcopy(comet_step->uct_iface,
+                coll_id, (uct_tag_t)-1, &iov, 1, &tag_ctx);
+        return;
+    }
 #else
     ucg_builtin_op_step_t *step = &op->steps[0];
     memcpy(step->recv_buffer, step->send_buffer, step->buffer_length);

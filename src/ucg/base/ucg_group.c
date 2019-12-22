@@ -399,7 +399,7 @@ void ucg_collective_destroy(ucg_coll_h coll)
     ucg_discard((ucg_op_t*)coll);
 }
 
-static ucs_status_t ucg_worker_groups_find_tl_id(ucp_worker_h worker,
+static void ucg_worker_groups_find_tl_id(ucp_worker_h worker,
         ucp_rsc_index_t *tl_id, const char *tl_name)
 {
     ucp_context_h context = worker->context;
@@ -409,11 +409,11 @@ static ucs_status_t ucg_worker_groups_find_tl_id(ucp_worker_h worker,
         ucp_tl_resource_desc_t *resource = &context->tl_rscs[tl_iter];
         if (!strcmp(resource->tl_rsc.tl_name, tl_name)) {
             *tl_id = tl_iter;
-            return UCS_OK;
+            return;
         }
     }
 
-    return UCS_ERR_UNSUPPORTED;
+    *tl_id = UCP_NULL_RESOURCE; /* Fallback */
 }
 
 __KHASH_IMPL(ucg_group_ep, static UCS_F_MAYBE_UNUSED inline,
@@ -429,17 +429,8 @@ static ucs_status_t ucg_worker_groups_init(ucp_worker_h worker,
         return status;
     }
 
-    status = ucg_worker_groups_find_tl_id(worker, &gctx->mm_coll_tl_id, UCT_MM_COLL_TL_NAME);
-    if (status != UCS_OK) {
-        ucg_plan_release_list(gctx->planners, gctx->num_planners);
-        return status;
-    }
-
-    status = ucg_worker_groups_find_tl_id(worker, &gctx->ud_comet_tl_id, UCT_UD_COMET_TL_NAME);
-    if (status != UCS_OK) {
-        ucg_plan_release_list(gctx->planners, gctx->num_planners);
-        return status;
-    }
+    ucg_worker_groups_find_tl_id(worker, &gctx->mm_coll_tl_id, UCT_MM_COLL_TL_NAME);
+    ucg_worker_groups_find_tl_id(worker, &gctx->ud_comet_tl_id, UCT_UD_COMET_TL_NAME);
 
     unsigned planner_idx;
     size_t group_ctx_offset  = sizeof(struct ucg_group);
@@ -576,11 +567,13 @@ ucs_status_t ucg_plan_connect(ucg_group_h group, ucg_group_member_index_t idx,
     ucs_status_t status = UCS_ERR_NO_ELEM;
     if (flags & (UCG_PLAN_CONNECT_FLAG_WANT_INCAST |
                  UCG_PLAN_CONNECT_FLAG_WANT_BCAST)) {
-        if (flags & UCG_PLAN_CONNECT_FLAG_WANT_INTRANODE) {
+        if ((flags & UCG_PLAN_CONNECT_FLAG_WANT_INTRANODE) &&
+            (gctx->mm_coll_tl_id != UCP_NULL_RESOURCE)) {
             status = ucg_plan_connect_sm(gctx, group, idx, flags, sm_cnt, ep_p,
                     ep_attr_p, md_p, md_attr_p, &iface_ep_slot);
         } else if ((flags & UCG_PLAN_CONNECT_FLAG_WANT_INTERNODE) &&
-                   (flags & UCG_PLAN_CONNECT_FLAG_WANT_INCAST)) {
+                   (flags & UCG_PLAN_CONNECT_FLAG_WANT_INCAST) &&
+                   (gctx->ud_comet_tl_id != UCP_NULL_RESOURCE)) {
             status = ucg_plan_connect_net(gctx, group, idx, flags, sm_cnt, ep_p,
                     ep_attr_p, md_p, md_attr_p);
         } else {
