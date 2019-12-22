@@ -73,7 +73,7 @@ typedef struct uct_ud_comet_iface {
     ucs_status_t        (*super_connect) (uct_ep_h ep,
                                           const uct_device_addr_t *dev_addr,
                                           const uct_ep_addr_t *ep_addr);
-    ucs_status_t 		(*super_am_zcopy)(uct_ep_h tl_ep, uint8_t id,
+    ucs_status_t 		(*super_uct_ud_ep_am_zcopy)(uct_ep_h tl_ep, uint8_t id,
                                           const void *header,
                                           unsigned header_length,
                                           const uct_iov_t *iov,
@@ -86,6 +86,7 @@ typedef struct uct_ud_comet_iface {
     uint32_t              comet_device_index;  /* device index */
     uint32_t              table_cnt;           /* number of tables */
     uct_ud_comet_table_t *tables;              /* per-table information */
+    uint8_t				  my_group_index;	   /* COMET slot-id */
 } uct_ud_comet_iface_t;
 
 #endif /* _UD_COMET_H_ */

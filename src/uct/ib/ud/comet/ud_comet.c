@@ -34,16 +34,19 @@ extern UCS_CLASS_INIT_FUNC(uct_ud_mlx5_iface_t,
                            const uct_iface_config_t *tl_config);
 
 static ucs_status_t
-uct_ud_comet_ep_get_address(uct_ep_h ep, uct_ep_addr_t *addr)
+uct_ud_comet_ep_get_address(uct_ep_h ep, uct_ep_addr_t *ep_addr)
 {
-    uct_ud_comet_iface_t *iface  = ucs_derived_of(ep->iface, uct_ud_comet_iface_t);
+    // uct_ud_comet_iface_t *iface  = ucs_derived_of(ep->iface, uct_ud_comet_iface_t);
     uct_ud_comet_ep_t *comet_ep  = ucs_derived_of(ep, uct_ud_comet_ep_t);
-    uct_ud_comet_ep_addr_t *addr = ucs_derived_of(ep_addr, uct_ud_comet_ep_address_t);
+    uct_ud_comet_ep_addr_t *addr = ucs_derived_of(ep_addr, uct_ud_comet_ep_addr_t);
 
     unsigned type_idx;
     for (type_idx = 0; type_idx < UCT_UD_COMET_COLL_TYPE_LAST; type_idx++) {
         comet_ep->header[type_idx].table_id = addr->table_id[type_idx];
     }
+
+    // Alex: Should we call super here?
+    return UCS_OK;
 }
 
 static ucs_status_t
@@ -53,14 +56,14 @@ uct_ud_comet_ep_connect_to_ep(uct_ep_h ep,
 {
     uct_ud_comet_iface_t *iface  = ucs_derived_of(ep->iface, uct_ud_comet_iface_t);
     uct_ud_comet_ep_t *comet_ep  = ucs_derived_of(ep, uct_ud_comet_ep_t);
-    uct_ud_comet_ep_addr_t *addr = ucs_derived_of(ep_addr, uct_ud_comet_ep_address_t);
+    uct_ud_comet_ep_addr_t *addr = ucs_derived_of(ep_addr, uct_ud_comet_ep_addr_t);
 
     unsigned type_idx;
     for (type_idx = 0; type_idx < UCT_UD_COMET_COLL_TYPE_LAST; type_idx++) {
         comet_ep->header[type_idx].table_id = addr->table_id[type_idx];
     }
 
-    return iface->super_connect(ep, dev_addr, ep);
+    return iface->super_connect(ep, dev_addr, ep_addr);
 }
 
 static unsigned
@@ -92,9 +95,9 @@ uct_ud_comet_ep_am_zcopy(uct_ep_h tl_ep, uint8_t id, const void *header,
                          size_t iovcnt, unsigned flags,
                          uct_completion_t *comp)
 {
-    uct_ud_comet_ep_t *comet_ep  = ucs_derived_of(ep, uct_ud_comet_ep_t);
-    struct comet_packet_header *packet_header = iface->tables[id].;
     uct_ud_comet_iface_t *iface = ucs_derived_of(tl_ep->iface, uct_ud_comet_iface_t);
+    uct_ud_comet_ep_t *comet_ep  = ucs_derived_of(tl_ep, uct_ud_comet_ep_t);
+    struct comet_packet_header *packet_header = &comet_ep->header[0];
     uint64_t tag = 0; // Shuki: TODO - Unknown.
     register uint64_t comet_prefix = (uint64_t)tag;
     uint8_t slot_id = iface->my_group_index;
@@ -109,7 +112,7 @@ uct_ud_comet_ep_am_zcopy(uct_ep_h tl_ep, uint8_t id, const void *header,
        (uint8_t)table_index, slot_id, comet_prefix);
 
     /* Call super function */
-    iface->super_uct_ud_ep_send(tl_ep, id, header,
+    iface->super_uct_ud_ep_am_zcopy(tl_ep, id, header,
             header_length, iov, iovcnt, flags,
             comp);
 
@@ -164,14 +167,14 @@ ud_comet_ops_mlx5_reuse_initialize(uct_ud_comet_iface_t *comet_iface)
     /* Store old function pointers */
     comet_iface->super_progress = ops->iface_progress;
     comet_iface->super_get_addr = ops->ep_get_address;
-    comet_iface->super_connect  = ops->ep_connect;
-    comet_iface->super_am_zcopy = ops->ep_am_zcopy;
+    comet_iface->super_connect  = ops->ep_connect_to_ep;
+    comet_iface->super_uct_ud_ep_am_zcopy = ops->ep_am_zcopy;
 
     /* Replace with new function pointers */
     ops->iface_close            = UCS_CLASS_DELETE_FUNC_NAME(uct_ud_comet_iface_t);
     ops->iface_progress         = uct_ud_comet_iface_progress;
     ops->ep_get_address         = uct_ud_comet_ep_get_address;
-    ops->ep_connect             = uct_ud_comet_ep_connect_to_ep;
+    ops->ep_connect_to_ep       = uct_ud_comet_ep_connect_to_ep;
     ops->iface_tag_recv_zcopy   = uct_ud_comet_iface_tag_recv_zcopy;
     ops->ep_am_zcopy            = uct_ud_comet_ep_am_zcopy;
 }
@@ -297,6 +300,11 @@ exit_error_free_resources:
 
     return status;
 }
+
+static UCS_CLASS_DEFINE_NEW_FUNC(uct_ud_comet_iface_t, uct_iface_t, uct_md_h,
+                                 uct_worker_h, const uct_iface_params_t*,
+                                 const uct_iface_config_t*);
+
 
 UCT_TL_COMPONENT_DEFINE(uct_ud_comet_tl,
                         uct_ud_comet_query_resources,
