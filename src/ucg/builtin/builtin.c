@@ -414,10 +414,13 @@ static void ucg_builtin_print(ucg_plan_t *plan, const ucg_collective_params_t *c
             printf("Reduce (R), ");
             break;
         case UCG_PLAN_METHOD_ALLGATHER_BRUCK:
-        	/* Correct! */
-            printf("Alltoall (G), ");
+            printf("Allgather (G), ");
+            break;
         case UCG_PLAN_METHOD_ALLTOALL_BRUCK:
-            printf("Alltoall (R), ");
+            printf("Alltoall (B), ");
+            break;
+        case UCG_PLAN_METHOD_PAIRWISE:
+            printf("Alltoall (P), ");
             break;
         case UCG_PLAN_METHOD_NEIGHBOR:
             printf("Neighbors, ");
