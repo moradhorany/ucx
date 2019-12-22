@@ -132,18 +132,19 @@ libuct_ib_la_SOURCES += \
 	ud/accel/ud_mlx5.c
 
 if HAVE_COMET_HW_UD
-noinst_HEADERS += \	
+noinst_HEADERS += \
 	ud/comet/ud_comet.h
-#../../../../comet/src/comet_lib.h
+
 libuct_ib_la_CFLAGS += -I../../../../comet/src/
 libuct_ib_la_CFLAGS += -I../../../../comet/driver/
 libuct_ib_la_CFLAGS += -I../../../../comet/inc/
 
 # Huawei COMET
-libuct_ib_la_SOURCES += \	
+libuct_ib_la_SOURCES += \
 	ud/comet/ud_comet.c \
 	../../../../comet/src/comet_lib.c \
 	../../../../comet/driver/comet_fpga_driver.c
+
 endif # HAVE_COMET_HW_UD
 
 endif # HAVE_MLX5_HW_UD
