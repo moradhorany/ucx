@@ -31,12 +31,17 @@ void ucg_builtin_init_reduce(ucg_builtin_op_t *op)
     memcpy(step->recv_buffer, step->send_buffer, step->buffer_length);
 
 #if HAVE_COMET_HW_UD
-    if (is_comet) {
+#if 0
+    if (ud_comet_is_initialized()) {
         /* Set the incoming buffer, and config the table*/
         uint8_t comet_table_id;
         ep->iface_tag_recv_zcopy(&table_id);
+        uct_iface_h iface, uct_tag_t tag,
+                                          uct_tag_t tag_mask, const uct_iov_t *iov,
+                                          size_t iovcnt, uct_tag_context_t *ctx)
         step->am_id = table_id;
     }
+#endif
 #endif
 }
 
@@ -104,11 +109,13 @@ void ucg_builtin_init_scatter(ucg_builtin_op_t *op)
 void ucg_builtin_calc_scatter(ucg_builtin_request_t *req, uint8_t *send_count,
                               size_t *base_offset, size_t *item_interval)
 {
+#if 0 /* Unused variables */
     ucg_builtin_plan_t *plan    = ucs_derived_of(req->op->super.plan, ucg_builtin_plan_t);
     ucg_builtin_op_step_t *step = req->step;
     *send_count                 = step->phase->ep_cnt;
-    *base_offset                = step->buffer_length * step->phase. plan->super.my_index;
+    *base_offset                = step->buffer_length * step->phase->plan->super.my_index;
     *item_interval              = step->buffer_length;
+#endif
 }
 
 ucs_status_t ucg_builtin_op_select_callbacks(ucg_builtin_plan_t *plan,
@@ -279,7 +286,7 @@ ucs_status_t ucg_builtin_step_create(ucg_builtin_plan_phase_t *phase,
     /* Set the actual step-related parameters */
     switch (phase->method) {
     /* Send-all, Recv-all */
-    UCG_PLAN_METHOD_PAIRWISE:
+    case UCG_PLAN_METHOD_PAIRWISE:
         extra_flags      |= UCG_BUILTIN_OP_STEP_FLAG_CALC_SENT_BUFFERS;
         extra_flags      |= UCG_BUILTIN_OP_STEP_FLAG_RECV_AFTER_SEND;
         /* no break */

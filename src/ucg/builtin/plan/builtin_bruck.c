@@ -120,8 +120,7 @@ ucs_status_t ucg_builtin_bruck_create(ucg_builtin_group_ctx_t *ctx,
             /* CHECK: is it necessary? */
 
             /* Alex: too few arguments */
-            status = ucg_builtin_connect(ctx, peer_index_dst, phase, phase_ep_index, 0 )
-
+            status = ucg_builtin_connect(ctx, peer_index_dst, phase, phase_ep_index, 0);
             if (status != UCS_OK) {
                 return status;
             }

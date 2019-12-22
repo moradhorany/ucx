@@ -88,7 +88,7 @@ ucg_builtin_choose_type(enum ucg_collective_modifiers flags,
     return UCG_PLAN_TREE_FANIN_FANOUT;
 #else
     if (ucs_popcount(group_size) > 1) {
-        return UCG_PLAN_ALLTOALL_BRCUK;
+        return UCG_PLAN_ALLTOALL_BRUCK;
     }
     return UCG_PLAN_ALLTOALL_AGGREGATION;
 #endif
@@ -346,7 +346,7 @@ static ucs_status_t ucg_builtin_plan(ucg_plan_component_t *plan_component,
                 plan_component->plan_config, builtin_ctx->group_params, coll_type, &plan);
         break;
 
-    case UCG_PLAN_ALLTOALL_BRCUK:
+    case UCG_PLAN_ALLTOALL_BRUCK:
         status = ucg_builtin_bruck_create(builtin_ctx, plan_topo_type,
                 plan_component->plan_config, builtin_ctx->group_params, coll_type, &plan);
         break;
@@ -361,6 +361,11 @@ static ucs_status_t ucg_builtin_plan(ucg_plan_component_t *plan_component,
     case UCG_PLAN_TREE_FANIN_FANOUT:
         status = ucg_builtin_tree_create(builtin_ctx, plan_topo_type,
                 plan_component->plan_config, builtin_ctx->group_params, coll_type, &plan);
+        break;
+
+    default:
+    	/* Shuki TODO: Unknown how to handle - Fix warning*/
+    	break;
     }
 
     if (status != UCS_OK) {

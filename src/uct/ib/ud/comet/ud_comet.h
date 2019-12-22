@@ -54,6 +54,9 @@ typedef struct uct_tl_comet_device_resource {
 typedef struct uct_ud_comet_ep_addr {
     uct_ud_ep_addr_t super;
 
+    /* COMET peer capabilites (sent from server to client) */
+    struct comet_capabilities comet_device_capabilities;
+
     uint16_t         table_id[UCT_UD_COMET_COLL_TYPE_LAST];
 } uct_ud_comet_ep_addr_t;
 
@@ -88,6 +91,9 @@ typedef struct uct_ud_comet_iface {
     uct_ud_comet_table_t *tables;              /* per-table information */
     uint8_t				  my_group_index;	   /* COMET slot-id */
 } uct_ud_comet_iface_t;
+
+int
+ud_comet_is_initialized(void);
 
 #endif /* _UD_COMET_H_ */
 

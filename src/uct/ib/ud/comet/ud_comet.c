@@ -26,6 +26,9 @@ static ucs_config_field_t uct_ud_comet_iface_config_table[] = {
   {NULL}
 };
 
+/* Indicates that UD_COMET has been initialized successfully */
+static int g_ud_comet_initialized = 0;
+
 static UCS_CLASS_DEFINE_DELETE_FUNC(uct_ud_comet_iface_t, uct_iface_t);
 
 extern UCS_CLASS_INIT_FUNC(uct_ud_mlx5_iface_t,
@@ -45,7 +48,7 @@ uct_ud_comet_ep_get_address(uct_ep_h ep, uct_ep_addr_t *ep_addr)
         comet_ep->header[type_idx].table_id = addr->table_id[type_idx];
     }
 
-    // Alex: Should we call super here?
+    // Shuki: Should we call super here?
     return UCS_OK;
 }
 
@@ -227,6 +230,9 @@ static UCS_CLASS_INIT_FUNC(uct_ud_comet_iface_t,
         self->tables[idx].incoming_prefix  = 0;
     }
 
+    /* UD_COMET initialized */
+    g_ud_comet_initialized = 1;
+
     return UCS_OK;
 }
 
@@ -237,7 +243,7 @@ uct_ud_comet_query_resources(uct_md_h md,
                             uct_tl_resource_desc_t **resources_p,
                             unsigned *num_resources_p)
 {
-    ucs_status_t status;
+    ucs_status_t status = UCS_OK;
     int ret;
     const struct comet_capabilities *comet_devices;
     uint32_t num_comet_devices;
@@ -274,7 +280,8 @@ uct_ud_comet_query_resources(uct_md_h md,
     if (num_comet_devices == 0) {
         ucs_debug("%s - COMET device not found, initializing UD_COMET as client\n",
                 __func__);
-    	return status;
+        status = UCS_OK;
+    	goto comet_init_successful_return;
     }
 
     tl_devices = *resources_p;
@@ -295,7 +302,8 @@ uct_ud_comet_query_resources(uct_md_h md,
     /* Return only 1 interface */
     *num_resources_p = 1;
 
-    return UCS_OK;
+comet_init_successful_return:
+    return status;
 
 exit_error_free_resources:
     if (*resources_p != NULL) {
@@ -306,6 +314,12 @@ exit_error_free_resources:
     *num_resources_p = 0;
 
     return status;
+}
+
+int
+ud_comet_is_initialized(void)
+{
+	return g_ud_comet_initialized;
 }
 
 static UCS_CLASS_DEFINE_NEW_FUNC(uct_ud_comet_iface_t, uct_iface_t, uct_md_h,
