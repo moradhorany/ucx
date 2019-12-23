@@ -196,6 +196,8 @@ static UCS_CLASS_INIT_FUNC(uct_ud_comet_iface_t,
                            const uct_iface_params_t *params,
                            const uct_iface_config_t *tl_config)
 {
+	ucs_status_t status;
+
     /* Initialize interface ops */
     const uct_ud_comet_iface_config_t *config =
             ucs_derived_of(tl_config, uct_ud_comet_iface_config_t);
@@ -205,10 +207,27 @@ static UCS_CLASS_INIT_FUNC(uct_ud_comet_iface_t,
     self->device_caps = NULL;
     self->comet_ref = NULL;
 
+    uct_md_component_t mdc;
+
+    uct_md_config_t md_config;
+
+    status = uct_mm_md_open("MD_COMET", (const uct_md_config_t *)&md_config, &md, &mdc);
+
+	if (status != UCS_OK) {
+		ucs_error("uct_mm_md_open() - Failed, status=%u", status);
+		return status;
+	}
+
     /* Get the attributes of this MD for connection establishment later */
-    ucs_status_t status = uct_mm_md_query(md, &self->md_attr);
+
+    status = uct_mm_md_query(md, &self->md_attr);
+
     if (status != UCS_OK) {
+
+                             ucs_error("uct_mm_md_query() - Failed, status=%u", status);
+
         return status;
+
     }
 
     /* Query the COMET device capabilities */
@@ -296,8 +315,6 @@ uct_ud_comet_query_resources(uct_md_h md,
 	*num_resources_p = (unsigned) tmp_num_resources;
 
     /* No COMET device? ==> CLIENT mode */
-    printf("num_resources_p = %p\n", num_resources_p);
-
     if (*num_resources_p == 0) {
         ucs_debug("COMET device not found, initializing UD_COMET as client");
     }
