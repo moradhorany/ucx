@@ -38,15 +38,6 @@ AC_ARG_WITH([ud],
 
 
 #
-# UD COMET Support
-#
-AC_ARG_WITH([ud-comet],
-            [AC_HELP_STRING([--with-comet-hw], [Compile with COMET experimental support])],
-            [],
-            [with_comet_hw=yes])
-
-
-#
 # DC Support
 #
 AC_ARG_WITH([dc],

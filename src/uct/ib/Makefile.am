@@ -138,10 +138,9 @@ libuct_ib_la_SOURCES += \
 	ud/comet/ud_comet.c \
 	../../../../comet/src/comet_lib.c \
 	../../../../comet/driver/comet_fpga_driver.c
+# Shuki - need to turn COMET into a library...
 
-libuct_ib_la_CFLAGS += -I../../../../comet/src/
-libuct_ib_la_CFLAGS += -I../../../../comet/driver/
-libuct_ib_la_CFLAGS += -I../../../../comet/inc/
+libuct_ib_la_CPPFLAGS += COMET_CPPFLAGS
 
 endif # HAVE_COMET_HW_UD
 
