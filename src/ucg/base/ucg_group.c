@@ -14,7 +14,10 @@
 #include <ucp/core/ucp_worker.h>
 #include <ucp/core/ucp_ep.inl>
 #include <ucp/core/ucp_proxy_ep.h> /* for @ref ucp_proxy_ep_test */
+
+#if HAVE_COMET_HW_UD
 #include <uct/ib/ud/comet/ud_comet.h>
+#endif
 
 #if ENABLE_STATS
 /**
@@ -430,7 +433,9 @@ static ucs_status_t ucg_worker_groups_init(ucp_worker_h worker,
     }
 
     ucg_worker_groups_find_tl_id(worker, &gctx->mm_coll_tl_id, UCT_MM_COLL_TL_NAME);
+#if HAVE_COMET_HW_UD
     ucg_worker_groups_find_tl_id(worker, &gctx->ud_comet_tl_id, UCT_UD_COMET_TL_NAME);
+#endif
 
     unsigned planner_idx;
     size_t group_ctx_offset  = sizeof(struct ucg_group);
@@ -531,6 +536,7 @@ ucs_status_t ucg_plan_connect_sm(ucg_groups_t *gctx, ucg_group_h group,
     return UCS_ERR_NO_ELEM;
 }
 
+#if HAVE_COMET_HW_UD
 ucs_status_t ucg_plan_connect_net(ucg_groups_t *gctx, ucg_group_h group,
         ucg_group_member_index_t peer_id,
         enum ucg_plan_connect_flags flags, uint16_t *sm_cnt,
@@ -552,6 +558,7 @@ ucs_status_t ucg_plan_connect_net(ucg_groups_t *gctx, ucg_group_h group,
 
     return UCS_ERR_NO_ELEM;
 }
+#endif
 
 ucs_status_t ucg_plan_connect(ucg_group_h group, ucg_group_member_index_t idx,
         enum ucg_plan_connect_flags flags, uint16_t *sm_cnt,
@@ -571,11 +578,13 @@ ucs_status_t ucg_plan_connect(ucg_group_h group, ucg_group_member_index_t idx,
             (gctx->mm_coll_tl_id != UCP_NULL_RESOURCE)) {
             status = ucg_plan_connect_sm(gctx, group, idx, flags, sm_cnt, ep_p,
                     ep_attr_p, md_p, md_attr_p, &iface_ep_slot);
+#if HAVE_COMET_HW_UD
         } else if ((flags & UCG_PLAN_CONNECT_FLAG_WANT_INTERNODE) &&
                    (flags & UCG_PLAN_CONNECT_FLAG_WANT_INCAST) &&
                    (gctx->ud_comet_tl_id != UCP_NULL_RESOURCE)) {
             status = ucg_plan_connect_net(gctx, group, idx, flags, sm_cnt, ep_p,
                     ep_attr_p, md_p, md_attr_p);
+#endif
         } else {
             *sm_cnt = 0;
         }
