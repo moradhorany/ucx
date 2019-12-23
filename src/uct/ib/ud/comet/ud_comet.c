@@ -271,26 +271,33 @@ uct_ud_comet_query_resources(uct_md_h md,
 {
     /* Query (MLX5, accelerated) UD resources */
     ucs_status_t status = uct_ib_device_query_tl_resources(&ucs_derived_of(md, uct_ib_md_t)->dev,
-            UCT_UD_COMET_TL_NAME, UCT_IB_DEVICE_FLAG_MLX5_PRM, resources_p, num_resources_p);
+            UCT_UD_COMET_TL_NAME, UCT_IB_DEVICE_FLAG_MLX5_PRM, resources_p, num_resources_p );
+
     if (status != UCS_OK) {
         return status;
     }
-    /* TODO: take COMET overhead into account in the resource latency estimation... */
 
+    /* TODO: take COMET overhead into account in the resource latency estimation... */
     if (*num_resources_p == 0) {
         ucs_debug("MLX5 UD devices not found for COMET");
         return UCS_ERR_NO_DEVICE;
     }
 
+    uint32_t tmp_num_resources;
+
     const struct comet_capabilities *comet_devices;
-    int ret = comet_query_capabilities(&comet_devices, (uint32_t*)&num_resources_p);
+    int ret = comet_query_capabilities(&comet_devices, &tmp_num_resources );
     if (ret != 0) {
         ucs_error("Failed to query COMET capabilities");
         *num_resources_p = 0;
         return UCS_ERR_NO_DEVICE;
     }
 
+	*num_resources_p = (unsigned) tmp_num_resources;
+
     /* No COMET device? ==> CLIENT mode */
+    printf("num_resources_p = %p\n", num_resources_p);
+
     if (*num_resources_p == 0) {
         ucs_debug("COMET device not found, initializing UD_COMET as client");
     }
