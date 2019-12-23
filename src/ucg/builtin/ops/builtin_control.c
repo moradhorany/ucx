@@ -154,6 +154,7 @@ ucs_status_t ucg_builtin_op_select_callbacks(ucg_builtin_plan_t *plan,
 
     case UCG_PLAN_METHOD_ALLTOALL_BRUCK:
         *init_cb = ucg_builtin_init_alltoall;
+        *fini_cb = ucg_builtin_fini_alltoall;
         break;
 
     case UCG_PLAN_METHOD_PAIRWISE:
