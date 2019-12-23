@@ -222,11 +222,6 @@ static UCS_CLASS_INIT_FUNC(uct_ud_comet_iface_t,
         return UCS_ERR_NO_RESOURCE;
     }
 
-    /* If no devices were found - this is a COMET client */
-    if (num_comet_devices == 0) {
-        return UCS_OK;
-    }
-
     if (config->device_index >= num_comet_devices) {
         ucs_error("Failed to choose the requested COMET device");
         return UCS_ERR_NO_DEVICE;
@@ -235,8 +230,8 @@ static UCS_CLASS_INIT_FUNC(uct_ud_comet_iface_t,
     /* Open device driver */
     ret = comet_init(config->device_index, &self->comet_ref);
     if ((ret != 0) || (self->comet_ref == NULL)) {
-        ucs_debug("Failed to initialize COMET");
-        return UCS_ERR_NO_MEMORY;
+    	ucs_debug("Failed to initialize COMET - Setting to CLIENT mode");
+        return UCS_OK;
     }
 
     /* Generate per-table information based on the COMET device capabilities */
