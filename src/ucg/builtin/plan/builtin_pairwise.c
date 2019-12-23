@@ -28,7 +28,7 @@ ucs_status_t ucg_builtin_pairwise_create(ucg_builtin_group_ctx_t *ctx,
 
     ucg_builtin_plan_t *pairwise    = (ucg_builtin_plan_t*)UCS_ALLOC_CHECK(alloc_size, "pairwise topology");
     ucg_builtin_plan_phase_t *phase = &pairwise->phss[0];
-    pairwise->ep_cnt                = proc_count;
+    pairwise->ep_cnt                = proc_count - 1;
     pairwise->phs_cnt               = 1;
 
     ucs_assert((ucg_group_member_index_t)((typeof(pairwise->ep_cnt))-1) > proc_count);
@@ -45,10 +45,13 @@ ucs_status_t ucg_builtin_pairwise_create(ucg_builtin_group_ctx_t *ctx,
     }
 
     /* Calculate the peers for each step */
-    phase->method = UCG_PLAN_METHOD_PAIRWISE;
+    phase->multi_eps  = (uct_ep_h*)(phase + 1);
+    phase->method     = UCG_PLAN_METHOD_PAIRWISE;
+    phase->ep_cnt     = proc_count - 1;
     phase->step_index = 1;
+    phase->flags      = 0;
 #if ENABLE_DEBUG_DATA || ENABLE_FAULT_TOLERANCE
-    phase->indexes = UCS_ALLOC_CHECK(proc_count * sizeof(my_index),
+    phase->indexes = UCS_ALLOC_CHECK(phase->ep_cnt * sizeof(my_index),
                                      "pairwise topology indexes");
 #endif
 
@@ -65,33 +68,3 @@ ucs_status_t ucg_builtin_pairwise_create(ucg_builtin_group_ctx_t *ctx,
     *plan_p = pairwise;
     return UCS_OK;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -146,33 +146,43 @@ ucs_status_t ucg_builtin_recursive_create(ucg_builtin_group_ctx_t *ctx,
         for (step_idx = phase - &recursive->phss[0], step_size = ppn;
              ((step_idx < alloc_phases) && (status == UCS_OK));
              step_idx++, phase++, recursive->phs_cnt++, step_size *= factor) {
+
             unsigned step_base = my_index - (my_index % (step_size * factor));
-            phase->method      = UCG_PLAN_METHOD_REDUCE_RECURSIVE;
-            phase->ep_cnt      = factor - 1;
-            phase->step_index  = step_idx;
-            phase->flags       = 0;
+
+            /* Recursive doubling is simpler */
+            if (factor == 2) {
+                ucg_group_member_index_t peer_index = step_base +
+                        ((my_index - step_base + step_size) % (step_size << 1));
+                status = ucg_builtin_single_connection_phase(ctx, peer_index,
+                        step_idx, UCG_PLAN_METHOD_REDUCE_RECURSIVE, phase);
+            } else {
+                phase->method      = UCG_PLAN_METHOD_REDUCE_RECURSIVE;
+                phase->ep_cnt      = factor - 1;
+                phase->step_index  = step_idx;
+                phase->flags       = 0;
 
 #if ENABLE_DEBUG_DATA || ENABLE_FAULT_TOLERANCE
-            phase->indexes     = UCS_ALLOC_CHECK((factor - 1) * sizeof(my_index),
-                    "recursive topology indexes");
+                phase->indexes     = UCS_ALLOC_CHECK((factor - 1) * sizeof(my_index),
+                                                     "recursive topology indexes");
 #endif
 
-            /* In each step, there are one or more peers */
-            unsigned step_peer_idx;
-            for (step_peer_idx = 1;
-                 ((step_peer_idx < factor) && (status == UCS_OK));
-                 step_peer_idx++) {
-                ucg_group_member_index_t peer_index = step_base +
-                        ((my_index - step_base + step_size * step_peer_idx) %
-                                (step_size * factor));
-                ucs_info("%lu's peer #%u/%u (step #%u/%u): %lu ", my_index,
-                         step_peer_idx, factor - 1, step_idx + 1,
-                         recursive->phs_cnt, peer_index);
-                if (factor != 2) {
-                    phase->multi_eps = next_ep++;
+                /* In each step, there are one or more peers */
+                unsigned step_peer_idx;
+                for (step_peer_idx = 1;
+                     ((step_peer_idx < factor) && (status == UCS_OK));
+                     step_peer_idx++, phase->multi_eps = next_ep++) {
+
+                    ucg_group_member_index_t peer_index = step_base +
+                            ((my_index - step_base + step_size * step_peer_idx) %
+                                    (step_size * factor));
+
+                    ucs_info("%lu's peer #%u/%u (step #%u/%u): %lu ", my_index,
+                            step_peer_idx, factor - 1, step_idx + 1,
+                            recursive->phs_cnt, peer_index);
+
+                    status = ucg_builtin_connect(ctx, peer_index, phase,
+                                                 step_peer_idx - 1, 0);
                 }
-                status = ucg_builtin_connect(ctx, peer_index, phase, (factor != 2) ?
-                        (step_peer_idx - 1) : UCG_BUILTIN_CONNECT_SINGLE_EP, 0);
             }
         }
         if (status != UCS_OK) {

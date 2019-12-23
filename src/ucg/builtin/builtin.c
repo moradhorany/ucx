@@ -599,6 +599,25 @@ ucs_status_t ucg_builtin_connect(ucg_builtin_group_ctx_t *ctx,
     return status;
 }
 
+ucs_status_t ucg_builtin_single_connection_phase(ucg_builtin_group_ctx_t *ctx,
+        ucg_group_member_index_t idx, ucg_step_idx_t step_index,
+        enum ucg_builtin_plan_method_type method,
+        ucg_builtin_plan_phase_t *phase)
+{
+    phase->ep_cnt     = 1;
+    phase->step_index = step_index;
+    phase->method     = method;
+    phase->flags      = 0;
+    phase->sm_cnt     = 0;
+
+#if ENABLE_DEBUG_DATA || ENABLE_FAULT_TOLERANCE
+    phase->indexes = UCS_ALLOC_CHECK(sizeof(idx), "phase indexes");
+#endif
+
+    return ucg_builtin_connect(ctx, idx, phase, UCG_BUILTIN_CONNECT_SINGLE_EP, 0);
+}
+
+
 UCG_PLAN_COMPONENT_DEFINE(ucg_builtin_component, "builtin",
                           sizeof(ucg_builtin_group_ctx_t), ucg_builtin_query,
                           ucg_builtin_create, ucg_builtin_destroy,

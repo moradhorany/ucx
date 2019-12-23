@@ -88,6 +88,11 @@ ucs_status_t ucg_builtin_connect(ucg_builtin_group_ctx_t *ctx,
         ucg_group_member_index_t idx, ucg_builtin_plan_phase_t *phase,
         unsigned phase_ep_index, unsigned sm_coll_flags);
 
+ucs_status_t ucg_builtin_single_connection_phase(ucg_builtin_group_ctx_t *ctx,
+        ucg_group_member_index_t idx, ucg_step_idx_t step_index,
+        enum ucg_builtin_plan_method_type method,
+        ucg_builtin_plan_phase_t *phase);
+
 typedef struct ucg_builtin_config ucg_builtin_config_t;
 
 typedef struct ucg_builtin_tree_config {
