@@ -88,9 +88,9 @@ ucg_builtin_choose_type(enum ucg_collective_modifiers flags,
     return UCG_PLAN_TREE_FANIN_FANOUT;
 #else
     if (ucs_popcount(group_size) == 1) {
-        return UCG_PLAN_ALLTOALL_BRCUK;
+        return UCG_PLAN_ALLTOALL_BRUCK;
     }
-    return UCG_PLAN_ALLTOALL_AGGREGATION;
+    return UCG_PLAN_PAIRWISE;
 #endif
 }
 
