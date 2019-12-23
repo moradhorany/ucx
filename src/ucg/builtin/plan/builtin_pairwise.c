@@ -47,6 +47,10 @@ ucs_status_t ucg_builtin_pairwise_create(ucg_builtin_group_ctx_t *ctx,
     /* Calculate the peers for each step */
     phase->method = UCG_PLAN_METHOD_PAIRWISE;
     phase->step_index = 1;
+#if ENABLE_DEBUG_DATA || ENABLE_FAULT_TOLERANCE
+    phase->indexes = UCS_ALLOC_CHECK(proc_count * sizeof(my_index),
+                                     "pairwise topology indexes");
+#endif
 
     for(proc_idx = 1; proc_idx < proc_count; proc_idx++) {
         /* Connect to receiver for second EP */
