@@ -207,27 +207,11 @@ static UCS_CLASS_INIT_FUNC(uct_ud_comet_iface_t,
     self->device_caps = NULL;
     self->comet_ref = NULL;
 
-    uct_md_component_t mdc;
-
-    uct_md_config_t md_config;
-
-    status = uct_mm_md_open("MD_COMET", (const uct_md_config_t *)&md_config, &md, &mdc);
-
-	if (status != UCS_OK) {
-		ucs_error("uct_mm_md_open() - Failed, status=%u", status);
-		return status;
-	}
-
     /* Get the attributes of this MD for connection establishment later */
-
-    status = uct_mm_md_query(md, &self->md_attr);
-
+    status = uct_md_query(md, &self->md_attr);
     if (status != UCS_OK) {
-
-                             ucs_error("uct_mm_md_query() - Failed, status=%u", status);
-
+        ucs_error("uct_mm_md_query() - Failed, status=%u", status);
         return status;
-
     }
 
     /* Query the COMET device capabilities */
