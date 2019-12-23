@@ -7,6 +7,7 @@
 #define _UD_COMET_H_
 
 #include <comet_lib.h>
+#include <comet_fpga_hw.h>
 
 #include <uct/ib/ud/base/ud_ep.h>
 #include <uct/ib/ud/accel/ud_mlx5.h>
@@ -47,7 +48,8 @@ typedef union uct_ud_comet_table {
 typedef struct uct_ud_comet_ep_addr {
     uct_ud_ep_addr_t super;
 
-    struct comet_capabilities device_caps; /* COMET peer capabilities (sent from server to client) */
+    struct comet_capabilities device_caps[COMET_FPGA_N_TABLES]; /* COMET peer capabilities (sent from server to client) */
+
     uint16_t                  table_id[UCT_UD_COMET_COLL_TYPE_LAST];
 } uct_ud_comet_ep_addr_t;
 

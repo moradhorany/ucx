@@ -38,7 +38,7 @@ uct_ud_comet_ep_get_address(uct_ep_h ep, uct_ep_addr_t *ep_addr)
     uct_ud_comet_iface_t *iface  = ucs_derived_of(ep->iface, uct_ud_comet_iface_t);
     uct_ud_comet_ep_addr_t *addr = ucs_derived_of(ep_addr, uct_ud_comet_ep_addr_t);
 
-    memcpy(&addr->device_caps, &iface->device_caps, sizeof(iface->device_caps));
+    memcpy(&addr->device_caps[0], &iface->device_caps, sizeof(addr->device_caps));
 
     unsigned type_idx;
     for (type_idx = 0; type_idx < UCT_UD_COMET_COLL_TYPE_LAST; type_idx++) {
@@ -147,10 +147,6 @@ uct_ud_comet_iface_tag_recv_zcopy(uct_iface_h iface, uct_tag_t tag,
 
 static UCS_CLASS_CLEANUP_FUNC(uct_ud_comet_iface_t)
 {
-    if (self->device_caps) {
-        free((void*)self->device_caps);
-    }
-
     if (self->comet_ref) {
         comet_close(self->comet_ref);
     }
