@@ -36,6 +36,7 @@
 enum {
     UCP_REQUEST_FLAG_COMPLETED            = UCS_BIT(0),
     UCP_REQUEST_FLAG_RELEASED             = UCS_BIT(1),
+	UCP_REQUEST_FLAG_COLLECTIVE           = UCS_BIT(2),
     UCP_REQUEST_FLAG_EXPECTED             = UCS_BIT(3),
     UCP_REQUEST_FLAG_LOCAL_COMPLETED      = UCS_BIT(4),
     UCP_REQUEST_FLAG_REMOTE_COMPLETED     = UCS_BIT(5),
@@ -74,17 +75,18 @@ enum {
  * Receive descriptor flags.
  */
 enum {
-    UCP_RECV_DESC_FLAG_UCT_DESC       = UCS_BIT(0), /* Descriptor allocated by UCT */
-    UCP_RECV_DESC_FLAG_EAGER          = UCS_BIT(1), /* Eager tag message */
-    UCP_RECV_DESC_FLAG_EAGER_ONLY     = UCS_BIT(2), /* Eager tag message with single fragment */
-    UCP_RECV_DESC_FLAG_EAGER_SYNC     = UCS_BIT(3), /* Eager tag message which requires reply */
-    UCP_RECV_DESC_FLAG_EAGER_OFFLOAD  = UCS_BIT(4), /* Eager tag from offload */
-    UCP_RECV_DESC_FLAG_EAGER_LAST     = UCS_BIT(5), /* Last fragment of eager tag message.
-                                                       Used by tag offload protocol. */
-    UCP_RECV_DESC_FLAG_RNDV           = UCS_BIT(6), /* Rendezvous request */
-    UCP_RECV_DESC_FLAG_MALLOC         = UCS_BIT(7)  /* Descriptor was allocated with malloc
-                                                       and must be freed, not returned to the
-                                                       memory pool or UCT */
+    UCP_RECV_DESC_FLAG_UCT_DESC        = UCS_BIT(0), /* Descriptor allocated by UCT */
+    UCP_RECV_DESC_FLAG_UCT_DESC_SHARED = UCS_BIT(1), /* Descriptor shared with others */
+    UCP_RECV_DESC_FLAG_EAGER           = UCS_BIT(2), /* Eager tag message */
+    UCP_RECV_DESC_FLAG_EAGER_ONLY      = UCS_BIT(3), /* Eager tag message with single fragment */
+    UCP_RECV_DESC_FLAG_EAGER_SYNC      = UCS_BIT(4), /* Eager tag message which requires reply */
+    UCP_RECV_DESC_FLAG_EAGER_OFFLOAD   = UCS_BIT(5), /* Eager tag from offload */
+    UCP_RECV_DESC_FLAG_EAGER_LAST      = UCS_BIT(6), /* Last fragment of eager tag message.
+                                                        Used by tag offload protocol. */
+    UCP_RECV_DESC_FLAG_RNDV            = UCS_BIT(7), /* Rendezvous request */
+    UCP_RECV_DESC_FLAG_MALLOC          = UCS_BIT(8)  /* Descriptor was allocated with malloc
+                                                        and must be freed, not returned to the
+                                                        memory pool or UCT */
 };
 
 
@@ -322,6 +324,12 @@ struct ucp_request {
             int                     comp_count; /* Countdown to request completion */
             ucp_ep_ext_gen_t        *next_ep;   /* Next endpoint to flush */
         } flush_worker;
+
+        struct {
+            ucp_worker_h                      worker;   /* Worker to use for collective */
+            void                             *op;       /* collective operation object */
+            ucp_request_collective_callback_t comp_cb;  /* completion call-back */
+        } collective;
     };
 };
 

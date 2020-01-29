@@ -347,6 +347,36 @@ typedef enum uct_atomic_op {
 
 
 /**
+ * @ingroup UCT_RESOURCE
+ * @brief Collective modifiers for length argument in UCT send functions.
+ *
+ * The enumeration allows specifying collective operation modifiers during UCT
+ * send operations, e.g. @ref uct_ep_am_short . This modifier will be combined
+ * with the length of the buffer (exact semantic depends on the collective type)
+ * and passed as the length argument to the function.
+ *
+ * Note: this information is passed from the sender to the receivers, so it only
+ * covers variants of one-to-many patterns.
+ */
+typedef enum uct_coll_dtype_mode {
+    UCT_COLL_DTYPE_MODE_PADDED,    /* Items are padded, e.g. in MPI_Reduce() */
+    UCT_COLL_DTYPE_MODE_PACKED,    /* Items are packed, e.g. in MPI_Scatter */
+    UCT_COLL_DTYPE_MODE_VAR_COUNT, /* Packed w/ displacement, e.g. MPI_Alltoallv */
+    UCT_COLL_DTYPE_MODE_VAR_DTYPE, /* Packed w/ datatype info, e.g. MPI_Alltoallw */
+    UCT_COLL_DTYPE_MODE_LAST
+} uct_coll_dtype_mode_t;
+
+#define UCT_COLL_DTYPE_MODE_BITS (2)
+#define UCT_COLL_DTYPE_MODE_PACK(_coll_op_type, _value) \
+    ((_coll_op_type) | ((_value) << UCT_COLL_DTYPE_MODE_BITS))
+
+#define UCT_COLL_DTYPE_MODE_UNPACK_VALUE(_packed) \
+    ((_packed) >> UCT_COLL_DTYPE_MODE_BITS)
+
+#define UCT_COLL_DTYPE_MODE_UNPACK_MODE(_packed) \
+    ((_packed) & UCS_MASK(UCT_COLL_DTYPE_MODE_BITS))
+
+/**
  * @defgroup UCT_RESOURCE_IFACE_CAP   UCT interface operations and capabilities
  * @ingroup UCT_RESOURCE
  *
@@ -417,6 +447,11 @@ typedef enum uct_atomic_op {
 #define UCT_IFACE_FLAG_TAG_EAGER_BCOPY UCS_BIT(51) /**< Hardware tag matching bcopy eager support */
 #define UCT_IFACE_FLAG_TAG_EAGER_ZCOPY UCS_BIT(52) /**< Hardware tag matching zcopy eager support */
 #define UCT_IFACE_FLAG_TAG_RNDV_ZCOPY  UCS_BIT(53) /**< Hardware tag matching rendezvous zcopy support */
+
+        /* Collective (multi-peer) operations */
+#define UCT_IFACE_FLAG_BCAST           UCS_BIT(55) /**< one-to-many send operations */
+#define UCT_IFACE_FLAG_INCAST          UCS_BIT(56) /**< many-to-one send operations */
+
 /**
  * @}
  */
@@ -529,11 +564,15 @@ enum uct_progress_types {
  * @brief Flags for active message send operation.
  */
 enum uct_msg_flags {
-    UCT_SEND_FLAG_SIGNALED = UCS_BIT(0) /**< Trigger @ref UCT_EVENT_RECV_SIG
-                                             event on remote side. Make best
-                                             effort attempt to avoid triggering
-                                             @ref UCT_EVENT_RECV event.
-                                             Ignored if not supported by interface. */
+    UCT_SEND_FLAG_SIGNALED  = UCS_BIT(0), /**< Trigger @ref UCT_EVENT_RECV_SIG
+                                               event on remote side. Make best
+                                               effort attempt to avoid triggering
+                                               @ref UCT_EVENT_RECV event.
+                                               Ignored if not supported by
+                                               interface. */
+    UCT_SEND_FLAG_PACK_LOCK = UCS_BIT(1)  /**< Provide locking so that calls to
+                                               the pack callback are mutually
+                                               exclusive (for shared memory) */
 };
 
 
@@ -545,7 +584,7 @@ enum uct_msg_flags {
  */
 enum uct_cb_flags {
     UCT_CB_FLAG_RESERVED = UCS_BIT(1), /**< Reserved for future use. */
-    UCT_CB_FLAG_ASYNC    = UCS_BIT(2)  /**< Callback is allowed to be called
+    UCT_CB_FLAG_ASYNC    = UCS_BIT(2), /**< Callback is allowed to be called
                                             from any thread in the process, and
                                             therefore should be thread-safe. For
                                             example, it may be called from a
@@ -560,6 +599,7 @@ enum uct_cb_flags {
                                             the callback will be invoked only
                                             from the context that called @ref
                                             uct_iface_progress). */
+    UCT_CB_FLAG_ALT_ARG  = UCS_BIT(3)  /**< Alternative callback argument. */
 };
 
 
@@ -634,7 +674,11 @@ enum uct_iface_params_field {
     UCT_IFACE_PARAM_FIELD_ASYNC_EVENT_ARG   = UCS_BIT(13),
 
     /** Enables @ref uct_iface_params_t::async_event_cb */
-    UCT_IFACE_PARAM_FIELD_ASYNC_EVENT_CB    = UCS_BIT(14)
+    UCT_IFACE_PARAM_FIELD_ASYNC_EVENT_CB    = UCS_BIT(14),
+
+    /** Enables @ref uct_iface_params_t::coll_np and
+     *  @ref uct_iface_params_t::coll_id */
+    UCT_IFACE_PARAM_FIELD_COLL_INFO         = UCS_BIT(15)
 };
 
 /**
@@ -859,6 +903,7 @@ struct uct_iface_attr {
             size_t           max_iov;    /**< Maximal @a iovcnt parameter in
                                               @ref ::uct_ep_put_zcopy
                                               @anchor uct_iface_attr_cap_put_max_iov */
+            uint64_t         coll_mode_flags; /**< from @ref uct_coll_dtype_mode_t */
         } put;                           /**< Attributes for PUT operations */
 
         struct {
@@ -876,6 +921,7 @@ struct uct_iface_attr {
             size_t           max_iov;    /**< Maximal @a iovcnt parameter in
                                               @ref uct_ep_get_zcopy
                                               @anchor uct_iface_attr_cap_get_max_iov */
+            uint64_t         coll_mode_flags; /**< from @ref uct_coll_dtype_mode_t */
         } get;                           /**< Attributes for GET operations */
 
         struct {
@@ -894,6 +940,7 @@ struct uct_iface_attr {
             size_t           max_iov;    /**< Maximal @a iovcnt parameter in
                                               @ref ::uct_ep_am_zcopy
                                               @anchor uct_iface_attr_cap_am_max_iov */
+            uint64_t         coll_mode_flags; /**< from @ref uct_coll_dtype_mode_t */
         } am;                            /**< Attributes for AM operations */
 
         struct {
@@ -935,6 +982,15 @@ struct uct_iface_attr {
             uint64_t         fop_flags;  /**< Attributes for atomic-fetch operations */
         } atomic32, atomic64;            /**< Attributes for atomic operations */
 
+        struct {
+            uint64_t         short_flags; /**< Flags from @ref uct_coll_dtype_mode_t
+                                               which are supported by short sends */
+            uint64_t         bcopy_flags; /**< Flags from @ref uct_coll_dtype_mode_t
+                                               which are supported by bcopy sends */
+            uint64_t         zcopy_flags; /**< Flags from @ref uct_coll_dtype_mode_t
+                                               which are supported by zcopy sends */
+        } coll_mode;
+
         uint64_t             flags;      /**< Flags from @ref UCT_RESOURCE_IFACE_CAP */
         uint64_t             event_flags;/**< Flags from @ref UCT_RESOURCE_IFACE_EVENT_CAP */
     } cap;                               /**< Interface capabilities */
@@ -952,7 +1008,8 @@ struct uct_iface_attr {
      * interface, this would usually be a combination of device and system
      * characteristics and determined at run time.
      */
-    double                   overhead;     /**< Message overhead, seconds */
+    double                   overhead_short; /**< Short message overhead, seconds */
+    double                   overhead_bcopy; /**< Bcopy message overhead, seconds */
     uct_ppn_bandwidth_t      bandwidth;    /**< Bandwidth model */
     ucs_linear_func_t        latency;      /**< Latency as function of number of
                                                 active endpoints */
@@ -1045,6 +1102,12 @@ struct uct_iface_params {
      * read by user if the iface has @ref UCT_IFACE_FLAG_EVENT_ASYNC_CB
      * capability */
     uct_async_event_cb_t                         async_event_cb;
+
+    /** Intra-host group member information */
+    struct {
+        uint32_t                                 proc_cnt;
+        uint32_t                                 proc_idx;
+    } node_info;
 };
 
 
@@ -2458,6 +2521,7 @@ UCT_INLINE_API ucs_status_t uct_iface_fence(uct_iface_h iface, unsigned flags)
     return iface->ops.iface_fence(iface, flags);
 }
 
+
 /**
  * @ingroup UCT_AM
  * @brief Release AM descriptor
@@ -2471,6 +2535,25 @@ UCT_INLINE_API void uct_iface_release_desc(void *desc)
 {
     uct_recv_desc_t *release_desc = uct_recv_desc(desc);
     release_desc->cb(release_desc, desc);
+}
+
+
+/**
+ * @ingroup UCT_AM
+ * @brief Release a shared AM descriptor
+ *
+ * Release active message descriptor @a desc, which was passed to
+ * @ref uct_am_callback_t "the active message callback", and owned by the callee.
+ * Applies only to descriptors passed with @ref UCT_CB_PARAM_FLAG_SHARED .
+ *
+ * @param [in]  desc  Descriptor to release.
+ *
+ * @return 1 if the descriptor originated on the calling process, 0 otherwise.
+ *
+ */
+UCT_INLINE_API int uct_iface_release_shared_desc(uct_iface_h iface, void *desc)
+{
+    return iface->ops.iface_release_shared_desc(iface, uct_recv_desc(desc), desc);
 }
 
 

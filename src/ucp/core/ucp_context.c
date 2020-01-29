@@ -27,7 +27,7 @@
 
 #define UCP_RSC_CONFIG_ALL    "all"
 
-ucp_am_handler_t ucp_am_handlers[UCP_AM_ID_LAST] = {{0, NULL, NULL}};
+ucp_am_handler_t ucp_am_handlers[UCP_AM_ID_MAX] = {{0}};
 
 static const char *ucp_atomic_modes[] = {
     [UCP_ATOMIC_MODE_CPU]    = "cpu",
@@ -58,7 +58,7 @@ const char* ucp_operation_names[] = {
     [UCP_OP_ID_LAST]          = NULL
 };
 
-static ucs_config_field_t ucp_config_table[] = {
+ucs_config_field_t ucp_config_table[] = {
   {"NET_DEVICES", UCP_RSC_CONFIG_ALL,
    "Specifies which network device(s) to use. The order is not meaningful.\n"
    "\"all\" would use all available devices.",
@@ -337,6 +337,9 @@ static ucp_tl_alias_t ucp_tl_aliases[] = {
   { "ugni",  { "ugni_smsg", "ugni_udt:aux", "ugni_rdma", NULL } },
   { "cuda",  { "cuda_copy", "cuda_ipc", "gdr_copy", NULL } },
   { "rocm",  { "rocm_copy", "rocm_ipc", "rocm_gdr", NULL } },
+  { "sysv",  { "sysv_",  "sysv_bcast_",  "sysv_incast_" } },
+  { "posix", { "posix_", "posix_bcast_", "posix_incast_" } },
+  { "xpmem", { "xpmem_", "xpmem_bcast_", "xpmem_incast_" } },
   { NULL }
 };
 
@@ -349,6 +352,7 @@ const char *ucp_feature_str[] = {
     [ucs_ilog2(UCP_FEATURE_WAKEUP)] = "UCP_FEATURE_WAKEUP",
     [ucs_ilog2(UCP_FEATURE_STREAM)] = "UCP_FEATURE_STREAM",
     [ucs_ilog2(UCP_FEATURE_AM)]     = "UCP_FEATURE_AM",
+    [ucs_ilog2(UCP_FEATURE_GROUPS)] = "UCP_FEATURE_GROUPS",
     NULL
 };
 
@@ -536,41 +540,54 @@ static int ucp_is_resource_in_transports_list(const char *tl_name,
 {
     uint64_t dummy_mask, tmp_tl_cfg_mask;
     uint8_t tmp_rsc_flags;
-    ucp_tl_alias_t *alias;
-    int tl_enabled;
+    ucp_tl_alias_t *alias, *rec_alias;
+    unsigned alias_arr_count, rec_alias_arr_count;
     char info[32];
-    unsigned alias_arr_count;
 
     ucs_assert(count > 0);
     if (ucp_config_is_tl_enabled(names, count, tl_name, 0,
                                  rsc_flags, tl_cfg_mask)) {
-        tl_enabled = 1;
-    } else {
-        tl_enabled = 0;
+        return 1;
+    }
 
-        /* check aliases */
-        for (alias = ucp_tl_aliases; alias->alias != NULL; ++alias) {
-            /* If an alias is enabled, and the transport is part of this alias,
-             * enable the transport.
-             */
-            alias_arr_count = ucp_tl_alias_count(alias);
-            snprintf(info, sizeof(info), "for alias '%s'", alias->alias);
-            dummy_mask      = 0;
-            tmp_rsc_flags   = 0;
-            tmp_tl_cfg_mask = 0;
-            if (ucp_config_is_tl_enabled(names, count, alias->alias, 1,
-                                         &tmp_rsc_flags, &tmp_tl_cfg_mask) &&
-                ucp_tls_array_is_present(alias->tls, alias_arr_count, tl_name,
+    /* check aliases */
+    for (alias = ucp_tl_aliases; alias->alias != NULL; ++alias) {
+        /* If an alias is enabled, and the transport is part of this alias,
+         * enable the transport.
+         */
+        alias_arr_count = ucp_tl_alias_count(alias);
+        snprintf(info, sizeof(info), "for alias '%s'", alias->alias);
+        dummy_mask      = 0;
+        tmp_rsc_flags   = 0;
+        tmp_tl_cfg_mask = 0;
+        if (ucp_config_is_tl_enabled(names, count, alias->alias, 1,
+                                     &tmp_rsc_flags, &tmp_tl_cfg_mask)) {
+            if (ucp_tls_array_is_present(alias->tls, alias_arr_count, tl_name,
                                          info, &tmp_rsc_flags, &dummy_mask)) {
-                *rsc_flags   |= tmp_rsc_flags;
-                *tl_cfg_mask |= tmp_tl_cfg_mask;
-                tl_enabled  = 1;
-                break;
+                goto tl_found_in_list;
+            }
+
+            /* check one level of recursion in aliases */
+            for (rec_alias = ucp_tl_aliases;
+                 rec_alias->alias != NULL;
+                 ++rec_alias) {
+                rec_alias_arr_count = ucp_tl_alias_count(rec_alias);
+                if (ucp_tls_array_is_present(alias->tls, alias_arr_count,
+                        rec_alias->alias, info, &tmp_rsc_flags, &dummy_mask) &&
+                    ucp_tls_array_is_present(rec_alias->tls, rec_alias_arr_count,
+                        tl_name, info, &tmp_rsc_flags, &dummy_mask)) {
+                    goto tl_found_in_list;
+                }
             }
         }
     }
 
-    return tl_enabled;
+    return 0;
+
+tl_found_in_list:
+    *rsc_flags   |= tmp_rsc_flags;
+    *tl_cfg_mask |= tmp_tl_cfg_mask;
+    return 1;
 }
 
 static int ucp_is_resource_enabled(const uct_tl_resource_desc_t *resource,
@@ -1406,6 +1423,13 @@ static void ucp_apply_params(ucp_context_h context, const ucp_params_t *params,
     } else {
         context->mt_lock.mt_type = UCP_MT_TYPE_NONE;
     }
+
+    if (params->field_mask & UCP_PARAM_FIELD_LOCAL_PEER_INFO) {
+        context->config.num_local_peers = params->num_local_peers;
+        context->config.my_local_peer_idx  = params->my_local_peer_idx;
+    } else {
+        context->config.num_local_peers = 0; /* Marks as unused */
+    }
 }
 
 static ucs_status_t ucp_fill_config(ucp_context_h context,
@@ -1553,6 +1577,7 @@ ucs_status_t ucp_init_version(unsigned api_major_version, unsigned api_minor_ver
     ucp_context_t *context;
     ucs_status_t status;
     ucs_debug_address_info_t addr_info;
+    size_t context_size;
 
     ucp_get_version(&major_version, &minor_version, &release_number);
 
@@ -1573,11 +1598,19 @@ ucs_status_t ucp_init_version(unsigned api_major_version, unsigned api_minor_ver
         config = dfl_config;
     }
 
+    context_size = sizeof(*context);
+    if (params->field_mask & UCP_PARAM_FIELD_CONTEXT_HEADROOM) {
+        context_size += params->context_headroom;
+    }
+
     /* allocate a ucp context */
-    context = ucs_calloc(1, sizeof(*context), "ucp context");
+    context = ucs_calloc(1, context_size, "ucp context");
     if (context == NULL) {
         status = UCS_ERR_NO_MEMORY;
         goto err_release_config;
+    }
+    if (params->field_mask & UCP_PARAM_FIELD_CONTEXT_HEADROOM) {
+        context = UCS_PTR_BYTE_OFFSET(context, params->context_headroom);
     }
 
     status = ucp_fill_config(context, params, config);
@@ -1605,6 +1638,9 @@ ucs_status_t ucp_init_version(unsigned api_major_version, unsigned api_minor_ver
 err_free_config:
     ucp_free_config(context);
 err_free_ctx:
+    if (params->field_mask & UCP_PARAM_FIELD_CONTEXT_HEADROOM) {
+        context = UCS_PTR_BYTE_OFFSET(context, -params->context_headroom);
+    }
     ucs_free(context);
 err_release_config:
     if (dfl_config != NULL) {

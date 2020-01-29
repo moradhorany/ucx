@@ -247,6 +247,10 @@ typedef struct ucp_context {
         ucp_rsc_index_t           cm_cmpt_idxs[UCP_MAX_RESOURCES];
         ucp_rsc_index_t           num_cm_cmpts;
 
+        /* Number of local (same-node) peers and my unique index among them */
+        uint32_t                  num_local_peers;
+        uint32_t                  my_local_peer_idx;
+
         /* Configuration supplied by the user */
         ucp_context_config_t      ext;
         
@@ -267,6 +271,7 @@ typedef struct ucp_am_handler {
     ucp_am_tracer_t               tracer;
     uint32_t                      flags;
     uct_am_callback_t             proxy_cb;
+    void                         *alt_arg;
 } ucp_am_handler_t;
 
 typedef struct ucp_tl_iface_atomic_flags {

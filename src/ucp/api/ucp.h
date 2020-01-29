@@ -124,7 +124,10 @@ enum ucp_params_field {
     UCP_PARAM_FIELD_TAG_SENDER_MASK   = UCS_BIT(4), /**< tag_sender_mask */
     UCP_PARAM_FIELD_MT_WORKERS_SHARED = UCS_BIT(5), /**< mt_workers_shared */
     UCP_PARAM_FIELD_ESTIMATED_NUM_EPS = UCS_BIT(6), /**< estimated_num_eps */
-    UCP_PARAM_FIELD_ESTIMATED_NUM_PPN = UCS_BIT(7)  /**< estimated_num_ppn */
+    UCP_PARAM_FIELD_ESTIMATED_NUM_PPN = UCS_BIT(7), /**< estimated_num_ppn */
+    UCP_PARAM_FIELD_CONTEXT_HEADROOM  = UCS_BIT(8), /**< context_headroom */
+    UCP_PARAM_FIELD_LOCAL_PEER_INFO   = UCS_BIT(9)  /**< num_local_peers AND
+                                                         my_local_peer_idx */
 };
 
 
@@ -148,8 +151,10 @@ enum ucp_feature {
     UCP_FEATURE_WAKEUP       = UCS_BIT(4),  /**< Request interrupt
                                                  notification support */
     UCP_FEATURE_STREAM       = UCS_BIT(5),  /**< Request stream support */
-    UCP_FEATURE_AM           = UCS_BIT(6)   /**< Request Active Message
+    UCP_FEATURE_AM           = UCS_BIT(6),  /**< Request Active Message
                                                  support */
+    UCP_FEATURE_GROUPS       = UCS_BIT(7)   /**< Request collective
+                                                 operations support */
 };
 
 
@@ -939,6 +944,24 @@ typedef struct ucp_params {
      * will override the number of endpoints set by @e estimated_num_ppn
      */
     size_t                             estimated_num_ppn;
+
+    /** Head-room before the allocated context pointer, for extensions */
+    size_t                             context_headroom;
+
+
+    /**
+     * Information about other processes running UCX on the same node, used for
+     * the UCG - Group operations (e.g. MPI collective operations). This includes
+     * both the total number of processes (including myself) and a zero-based
+     * index of my process, guaranteed to be unique among the local processes
+     * which this process will contact. Typically the process with index #0
+     * performs special duties in group-aware transports, and those transports
+     * need this information on every process.
+     *
+     * @note Both fields are indicated be the same bit in @ref field_mask.
+     */
+    uint32_t                           num_local_peers;
+    uint32_t                           my_local_peer_idx;
 } ucp_params_t;
 
 

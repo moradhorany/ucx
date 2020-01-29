@@ -21,21 +21,11 @@ typedef enum {
 } uct_mm_send_op_t;
 
 
-/* Check if the resources on the remote peer are available for sending to it.
- * i.e. check if the remote receive FIFO has room in it.
- * return 1 if can send.
- * return 0 if can't send.
- */
-#define UCT_MM_EP_IS_ABLE_TO_SEND(_head, _tail, _fifo_size) \
-    ucs_likely(((_head) - (_tail)) < (_fifo_size))
-
-
-static UCS_F_NOINLINE ucs_status_t
-uct_mm_ep_attach_remote_seg(uct_mm_ep_t *ep, uct_mm_seg_id_t seg_id,
-                            size_t length, void **address_p)
+ucs_status_t uct_mm_ep_attach_remote_seg(uct_mm_ep_t *ep, uct_mm_seg_id_t seg_id,
+                                         size_t length, void **address_p)
 {
-    uct_mm_iface_t *iface = ucs_derived_of(ep->super.super.iface,
-                                           uct_mm_iface_t);
+    uct_mm_base_iface_t *iface = ucs_derived_of(ep->super.super.iface,
+                                                uct_mm_base_iface_t);
     uct_mm_remote_seg_t *remote_seg;
     ucs_status_t status;
     khiter_t khiter;
@@ -65,28 +55,12 @@ uct_mm_ep_attach_remote_seg(uct_mm_ep_t *ep, uct_mm_seg_id_t seg_id,
     return UCS_OK;
 }
 
-static UCS_F_ALWAYS_INLINE ucs_status_t
-uct_mm_ep_get_remote_seg(uct_mm_ep_t *ep, uct_mm_seg_id_t seg_id, size_t length,
-                         void **address_p)
-{
-    khiter_t khiter;
-
-    /* fast path - segment is already present */
-    khiter = kh_get(uct_mm_remote_seg, &ep->remote_segs, seg_id);
-    if (ucs_likely(khiter != kh_end(&ep->remote_segs))) {
-        *address_p = kh_val(&ep->remote_segs, khiter).address;
-        return UCS_OK;
-    }
-
-    /* slow path - attach new segment */
-    return uct_mm_ep_attach_remote_seg(ep, seg_id, length, address_p);
-}
-
 
 /* send a signal to remote interface using Unix-domain socket */
-static void uct_mm_ep_signal_remote(uct_mm_ep_t *ep)
+void uct_mm_ep_signal_remote(uct_mm_ep_t *ep)
 {
-    uct_mm_iface_t *iface = ucs_derived_of(ep->super.super.iface, uct_mm_iface_t);
+    uct_mm_base_iface_t *iface = ucs_derived_of(ep->super.super.iface,
+                                                uct_mm_base_iface_t);
     char dummy = 0;
     int ret;
 
@@ -118,9 +92,9 @@ static void uct_mm_ep_signal_remote(uct_mm_ep_t *ep)
     }
 }
 
-static UCS_CLASS_INIT_FUNC(uct_mm_ep_t, const uct_ep_params_t *params)
+UCS_CLASS_INIT_FUNC(uct_mm_ep_t, const uct_ep_params_t *params)
 {
-    uct_mm_iface_t            *iface = ucs_derived_of(params->iface, uct_mm_iface_t);
+    uct_mm_base_iface_t       *iface = ucs_derived_of(params->iface, uct_mm_base_iface_t);
     uct_mm_md_t               *md    = ucs_derived_of(iface->super.super.md, uct_mm_md_t);
     const uct_mm_iface_addr_t *addr  = (const void *)params->iface_addr;
     ucs_status_t status;
@@ -173,8 +147,9 @@ err:
 
 static UCS_CLASS_CLEANUP_FUNC(uct_mm_ep_t)
 {
-    uct_mm_iface_t  *iface = ucs_derived_of(self->super.super.iface, uct_mm_iface_t);
     uct_mm_remote_seg_t remote_seg;
+    uct_mm_base_iface_t *iface = ucs_derived_of(self->super.super.iface,
+                                                uct_mm_base_iface_t);
 
     uct_mm_ep_pending_purge(&self->super.super, NULL, NULL);
 
@@ -194,7 +169,8 @@ UCS_CLASS_DEFINE_DELETE_FUNC(uct_mm_ep_t, uct_ep_t);
 static inline ucs_status_t uct_mm_ep_get_remote_elem(uct_mm_ep_t *ep, uint64_t head,
                                                      uct_mm_fifo_element_t **elem)
 {
-    uct_mm_iface_t *iface = ucs_derived_of(ep->super.super.iface, uct_mm_iface_t);
+    uct_mm_base_iface_t *iface = ucs_derived_of(ep->super.super.iface,
+                                                uct_mm_base_iface_t);
     uint64_t elem_index;       /* the fifo elem's index in the fifo. */
                                /* must be smaller than fifo size */
     uint64_t returned_val;
@@ -211,12 +187,6 @@ static inline ucs_status_t uct_mm_ep_get_remote_elem(uct_mm_ep_t *ep, uint64_t h
     return UCS_OK;
 }
 
-static inline void uct_mm_ep_update_cached_tail(uct_mm_ep_t *ep)
-{
-    ucs_memory_cpu_load_fence();
-    ep->cached_tail = ep->fifo_ctl->tail;
-}
-
 /* A common mm active message sending function.
  * The first parameter indicates the origin of the call.
  * is_short = 1 - perform AM short sending
@@ -224,8 +194,8 @@ static inline void uct_mm_ep_update_cached_tail(uct_mm_ep_t *ep)
  */
 static UCS_F_ALWAYS_INLINE ssize_t
 uct_mm_ep_am_common_send(uct_mm_send_op_t send_op, uct_mm_ep_t *ep,
-                         uct_mm_iface_t *iface, uint8_t am_id, size_t length,
-                         uint64_t header, const void *payload,
+                         uct_mm_base_iface_t *iface, uint8_t am_id,
+                         size_t length, uint64_t header, const void *payload,
                          uct_pack_callback_t pack_cb, void *arg,
                          unsigned flags)
 {
@@ -285,8 +255,7 @@ retry:
         }
 
         length       = pack_cb(UCS_PTR_BYTE_OFFSET(base_address,
-                                                   elem->desc.offset),
-                               arg);
+                                                   elem->desc.offset), arg);
         elem_flags   = 0;
         elem->length = length;
 
@@ -327,8 +296,8 @@ retry:
 ucs_status_t uct_mm_ep_am_short(uct_ep_h tl_ep, uint8_t id, uint64_t header,
                                 const void *payload, unsigned length)
 {
-    uct_mm_iface_t *iface = ucs_derived_of(tl_ep->iface, uct_mm_iface_t);
-    uct_mm_ep_t *ep = ucs_derived_of(tl_ep, uct_mm_ep_t);
+    uct_mm_base_iface_t *iface = ucs_derived_of(tl_ep->iface, uct_mm_base_iface_t);
+    uct_mm_ep_t         *ep    = ucs_derived_of(tl_ep, uct_mm_ep_t);
 
     UCT_CHECK_LENGTH(length + sizeof(header), 0,
                      iface->config.fifo_elem_size - sizeof(uct_mm_fifo_element_t),
@@ -339,11 +308,12 @@ ucs_status_t uct_mm_ep_am_short(uct_ep_h tl_ep, uint8_t id, uint64_t header,
                                                   payload, NULL, NULL, 0);
 }
 
-ssize_t uct_mm_ep_am_bcopy(uct_ep_h tl_ep, uint8_t id, uct_pack_callback_t pack_cb,
+ssize_t uct_mm_ep_am_bcopy(uct_ep_h tl_ep, uint8_t id,
+                           uct_pack_callback_t pack_cb,
                            void *arg, unsigned flags)
 {
-    uct_mm_iface_t *iface = ucs_derived_of(tl_ep->iface, uct_mm_iface_t);
-    uct_mm_ep_t *ep = ucs_derived_of(tl_ep, uct_mm_ep_t);
+    uct_mm_base_iface_t *iface = ucs_derived_of(tl_ep->iface, uct_mm_base_iface_t);
+    uct_mm_ep_t         *ep    = ucs_derived_of(tl_ep, uct_mm_ep_t);
 
     return uct_mm_ep_am_common_send(UCT_MM_SEND_AM_BCOPY, ep, iface, id, 0, 0,
                                     NULL, pack_cb, arg, flags);
@@ -351,7 +321,8 @@ ssize_t uct_mm_ep_am_bcopy(uct_ep_h tl_ep, uint8_t id, uct_pack_callback_t pack_
 
 static inline int uct_mm_ep_has_tx_resources(uct_mm_ep_t *ep)
 {
-    uct_mm_iface_t *iface = ucs_derived_of(ep->super.super.iface, uct_mm_iface_t);
+    uct_mm_base_iface_t *iface = ucs_derived_of(ep->super.super.iface,
+                                                uct_mm_base_iface_t);
     return UCT_MM_EP_IS_ABLE_TO_SEND(ep->fifo_ctl->head, ep->cached_tail,
                                      iface->config.fifo_size);
 }
@@ -359,8 +330,8 @@ static inline int uct_mm_ep_has_tx_resources(uct_mm_ep_t *ep)
 ucs_status_t uct_mm_ep_pending_add(uct_ep_h tl_ep, uct_pending_req_t *n,
                                    unsigned flags)
 {
-    uct_mm_iface_t *iface = ucs_derived_of(tl_ep->iface, uct_mm_iface_t);
-    uct_mm_ep_t *ep = ucs_derived_of(tl_ep, uct_mm_ep_t);
+    uct_mm_base_iface_t *iface = ucs_derived_of(tl_ep->iface, uct_mm_base_iface_t);
+    uct_mm_ep_t         *ep    = ucs_derived_of(tl_ep, uct_mm_ep_t);
 
     /* check if resources became available */
     if (uct_mm_ep_has_tx_resources(ep)) {
@@ -416,10 +387,10 @@ ucs_arbiter_cb_result_t uct_mm_ep_process_pending(ucs_arbiter_t *arbiter,
     }
 }
 
-static ucs_arbiter_cb_result_t uct_mm_ep_abriter_purge_cb(ucs_arbiter_t *arbiter,
-                                                          ucs_arbiter_group_t *group,
-                                                          ucs_arbiter_elem_t *elem,
-                                                          void *arg)
+ucs_arbiter_cb_result_t uct_mm_ep_abriter_purge_cb(ucs_arbiter_t *arbiter,
+                                                   ucs_arbiter_group_t *group,
+                                                   ucs_arbiter_elem_t *elem,
+                                                   void *arg)
 {
     uct_mm_ep_t *ep                 = ucs_container_of(group, uct_mm_ep_t,
                                                        arb_group);
@@ -439,9 +410,9 @@ static ucs_arbiter_cb_result_t uct_mm_ep_abriter_purge_cb(ucs_arbiter_t *arbiter
 void uct_mm_ep_pending_purge(uct_ep_h tl_ep, uct_pending_purge_callback_t cb,
                              void *arg)
 {
-    uct_mm_iface_t *iface = ucs_derived_of(tl_ep->iface, uct_mm_iface_t);
-    uct_mm_ep_t *ep = ucs_derived_of(tl_ep, uct_mm_ep_t);
-    uct_purge_cb_args_t  args = {cb, arg};
+    uct_mm_base_iface_t *iface = ucs_derived_of(tl_ep->iface, uct_mm_base_iface_t);
+    uct_mm_ep_t         *ep    = ucs_derived_of(tl_ep, uct_mm_ep_t);
+    uct_purge_cb_args_t  args  = {cb, arg};
 
     ucs_arbiter_group_purge(&iface->arbiter, &ep->arb_group,
                             uct_mm_ep_abriter_purge_cb, &args);
