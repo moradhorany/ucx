@@ -124,10 +124,13 @@ static void print_iface_info(uct_worker_h worker, uct_md_h md,
                                  UCT_IFACE_PARAM_FIELD_DEVICE      |
                                  UCT_IFACE_PARAM_FIELD_STATS_ROOT  |
                                  UCT_IFACE_PARAM_FIELD_RX_HEADROOM |
-                                 UCT_IFACE_PARAM_FIELD_CPU_MASK,
+                                 UCT_IFACE_PARAM_FIELD_CPU_MASK    |
+                                 UCT_IFACE_PARAM_FIELD_COLL_INFO,
         .open_mode             = UCT_IFACE_OPEN_MODE_DEVICE,
         .mode.device.tl_name   = resource->tl_name,
         .mode.device.dev_name  = resource->dev_name,
+        .node_info.proc_cnt    = 2,
+        .node_info.proc_idx    = 0,
         .stats_root            = ucs_stats_get_root(),
         .rx_headroom           = 0
     };
@@ -254,6 +257,9 @@ static void print_iface_info(uct_worker_h worker, uct_md_h md,
             PRINT_ATOMIC_FETCH(SWAP , iface_attr.cap, "");
             PRINT_ATOMIC_FETCH(CSWAP, iface_attr.cap, "");
         }
+
+        PRINT_CAP(INCAST, iface_attr.cap.flags, iface_attr.cap.flags)
+        PRINT_CAP(BCAST, iface_attr.cap.flags, iface_attr.cap.flags);
 
         buf[0] = '\0';
         if (iface_attr.cap.flags & (UCT_IFACE_FLAG_CONNECT_TO_EP |

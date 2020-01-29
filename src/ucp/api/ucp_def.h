@@ -294,6 +294,32 @@ typedef void (*ucp_request_cleanup_callback_t)(void *request);
 
 
 /**
+ * @ingroup UCP_CONTEXT
+ * @brief Initialization of a specific UCP extension.
+ *
+ * This callback routine is responsible for initializing one UCP extension.
+ *
+ * @param [in]      worker      Worker handle to initialize the extension on.
+ * @param [in,out]  next_am_id  Next available Active Message ID to use.
+ * @param [in,out]  ext_ctx     Space for the extension's context.
+ */
+typedef ucs_status_t (*ucp_ext_init_f)(ucp_worker_h worker,
+                                       unsigned *next_am_id,
+                                       void *ext_ctx);
+
+
+/**
+ * @ingroup UCP_CONTEXT
+ * @brief Cleanup of a specific UCP extension.
+ *
+ * This callback routine is responsible for the cleanup one UCP extension.
+ *
+ * @param [in]      ext_ctx     Space holding the extension's context.
+ */
+typedef void (*ucp_ext_cleanup_f)(void *ext_ctx);
+
+
+/**
  * @ingroup UCP_COMM
  * @brief Completion callback for non-blocking sends.
  *

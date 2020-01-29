@@ -11,6 +11,7 @@
 
 #include <uct/sm/mm/base/mm_md.h>
 #include <uct/sm/mm/base/mm_iface.h>
+#include <uct/sm/mm/coll/mm_coll_iface.h>
 #include <ucs/debug/memtrack.h>
 #include <ucs/debug/log.h>
 #include <ucs/sys/string.h>
@@ -672,4 +673,10 @@ static uct_mm_md_mapper_ops_t uct_posix_md_ops = {
 };
 
 UCT_MM_TL_DEFINE(posix, &uct_posix_md_ops, uct_posix_rkey_unpack,
-                 uct_posix_rkey_release, "POSIX_")
+                 uct_posix_rkey_release, "POSIX_", _)
+UCT_MM_TL_DEFINE(posix, &uct_posix_md_ops, uct_posix_rkey_unpack,
+                 uct_posix_rkey_release, "POSIX_", _lcoll_)
+UCT_MM_TL_DEFINE(posix, &uct_posix_md_ops, uct_posix_rkey_unpack,
+                 uct_posix_rkey_release, "POSIX_", _bcoll_)
+UCT_MM_TL_DEFINE(posix, &uct_posix_md_ops, uct_posix_rkey_unpack,
+                 uct_posix_rkey_release, "POSIX_", _ccoll_)

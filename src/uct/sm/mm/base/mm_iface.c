@@ -64,8 +64,7 @@ ucs_config_field_t uct_mm_iface_config_table[] = {
     {NULL}
 };
 
-static ucs_status_t uct_mm_iface_get_address(uct_iface_t *tl_iface,
-                                             uct_iface_addr_t *addr)
+ucs_status_t uct_mm_iface_get_address(uct_iface_t *tl_iface, uct_iface_addr_t *addr)
 {
     uct_mm_iface_t      *iface      = ucs_derived_of(tl_iface, uct_mm_iface_t);
     uct_mm_md_t         *md         = ucs_derived_of(iface->super.super.md,
@@ -77,10 +76,9 @@ static ucs_status_t uct_mm_iface_get_address(uct_iface_t *tl_iface,
     return uct_mm_md_mapper_ops(md)->iface_addr_pack(md, iface_addr + 1);
 }
 
-static int
-uct_mm_iface_is_reachable(const uct_iface_h tl_iface,
-                          const uct_device_addr_t *dev_addr,
-                          const uct_iface_addr_t *tl_iface_addr)
+int uct_mm_iface_is_reachable(const uct_iface_h tl_iface,
+                              const uct_device_addr_t *dev_addr,
+                              const uct_iface_addr_t *tl_iface_addr)
 {
     uct_mm_iface_t      *iface      = ucs_derived_of(tl_iface, uct_mm_iface_t);
     uct_mm_md_t         *md         = ucs_derived_of(iface->super.super.md,
@@ -115,8 +113,7 @@ ucs_status_t uct_mm_iface_flush(uct_iface_h tl_iface, unsigned flags,
     return UCS_OK;
 }
 
-static ucs_status_t uct_mm_iface_query(uct_iface_h tl_iface,
-                                       uct_iface_attr_t *iface_attr)
+ucs_status_t uct_mm_iface_query(uct_iface_h tl_iface, uct_iface_attr_t *iface_attr)
 {
     uct_mm_iface_t *iface = ucs_derived_of(tl_iface, uct_mm_iface_t);
     uct_mm_md_t    *md    = ucs_derived_of(iface->super.super.md, uct_mm_md_t);
@@ -199,7 +196,7 @@ uct_mm_progress_fifo_tail(uct_mm_iface_t *iface)
     iface->recv_fifo_ctl->tail = iface->read_index;
 }
 
-static UCS_F_ALWAYS_INLINE ucs_status_t
+UCS_F_ALWAYS_INLINE ucs_status_t
 uct_mm_assign_desc_to_fifo_elem(uct_mm_iface_t *iface,
                                 uct_mm_fifo_element_t *elem,
                                 unsigned need_new_desc)
@@ -320,7 +317,7 @@ uct_mm_iface_fifo_window_adjust(uct_mm_iface_t *iface,
     }
 }
 
-static unsigned uct_mm_iface_progress(uct_iface_h tl_iface)
+unsigned uct_mm_iface_progress(uct_iface_h tl_iface)
 {
     uct_mm_iface_t *iface = ucs_derived_of(tl_iface, uct_mm_iface_t);
     unsigned total_count  = 0;
@@ -345,14 +342,13 @@ static unsigned uct_mm_iface_progress(uct_iface_h tl_iface)
     return total_count;
 }
 
-static ucs_status_t uct_mm_iface_event_fd_get(uct_iface_h tl_iface, int *fd_p)
+ucs_status_t uct_mm_iface_event_fd_get(uct_iface_h tl_iface, int *fd_p)
 {
     *fd_p = ucs_derived_of(tl_iface, uct_mm_iface_t)->signal_fd;
     return UCS_OK;
 }
 
-static ucs_status_t uct_mm_iface_event_fd_arm(uct_iface_h tl_iface,
-                                              unsigned events)
+ucs_status_t uct_mm_iface_event_fd_arm(uct_iface_h tl_iface, unsigned events)
 {
     uct_mm_iface_t *iface = ucs_derived_of(tl_iface, uct_mm_iface_t);
     char dummy[UCT_MM_IFACE_MAX_SIG_EVENTS]; /* pop multiple signals at once */
@@ -536,9 +532,9 @@ static void uct_mm_iface_log_created(uct_mm_iface_t *iface)
               iface->config.fifo_elem_size, iface->config.fifo_size);
 }
 
-static UCS_CLASS_INIT_FUNC(uct_mm_iface_t, uct_md_h md, uct_worker_h worker,
-                           const uct_iface_params_t *params,
-                           const uct_iface_config_t *tl_config)
+UCS_CLASS_INIT_FUNC(uct_mm_iface_t, uct_md_h md, uct_worker_h worker,
+                    const uct_iface_params_t *params,
+                    const uct_iface_config_t *tl_config)
 {
     uct_mm_iface_config_t *mm_config =
                     ucs_derived_of(tl_config, uct_mm_iface_config_t);

@@ -10,6 +10,7 @@
 
 #include <ucp/api/ucp.h>
 #include <ucs/debug/assert.h>
+#include <ucs/type/spinlock.h>
 
 
 /**

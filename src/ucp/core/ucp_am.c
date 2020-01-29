@@ -114,8 +114,9 @@ UCS_PROFILE_FUNC_VOID(ucp_am_data_release, (worker, data),
         return;
     }
 
+    ucs_assert(!(rdesc->flags & UCP_RECV_DESC_FLAG_UCT_DESC_SHARED));
     UCP_WORKER_THREAD_CS_ENTER_CONDITIONAL(worker);
-    ucp_recv_desc_release(rdesc);
+    ucp_recv_desc_release(rdesc, NULL);
     UCP_WORKER_THREAD_CS_EXIT_CONDITIONAL(worker);
 }
 
@@ -810,7 +811,7 @@ static ucs_status_t ucp_am_long_first_handler(void *am_arg, void *am_data,
         ucp_am_copy_data_fragment(first_rdesc, mid_hdr + 1,
                                   mid_rdesc->length - sizeof(*mid_hdr),
                                   mid_hdr->offset + sizeof(*first_hdr));
-        ucp_recv_desc_release(mid_rdesc);
+        ucp_recv_desc_release(mid_rdesc, NULL);
     }
 
     ucs_list_add_tail(&ep_ext->am.started_ams, &first_rdesc->am_first.list);

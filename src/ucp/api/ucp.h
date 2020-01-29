@@ -124,7 +124,9 @@ enum ucp_params_field {
     UCP_PARAM_FIELD_TAG_SENDER_MASK   = UCS_BIT(4), /**< tag_sender_mask */
     UCP_PARAM_FIELD_MT_WORKERS_SHARED = UCS_BIT(5), /**< mt_workers_shared */
     UCP_PARAM_FIELD_ESTIMATED_NUM_EPS = UCS_BIT(6), /**< estimated_num_eps */
-    UCP_PARAM_FIELD_ESTIMATED_NUM_PPN = UCS_BIT(7)  /**< estimated_num_ppn */
+    UCP_PARAM_FIELD_ESTIMATED_NUM_PPN = UCS_BIT(7), /**< estimated_num_ppn */
+    UCP_PARAM_FIELD_LOCAL_PEER_INFO   = UCS_BIT(8)  /**< num_local_peers AND
+                                                         my_local_peer_idx */
 };
 
 
@@ -148,8 +150,10 @@ enum ucp_feature {
     UCP_FEATURE_WAKEUP       = UCS_BIT(4),  /**< Request interrupt
                                                  notification support */
     UCP_FEATURE_STREAM       = UCS_BIT(5),  /**< Request stream support */
-    UCP_FEATURE_AM           = UCS_BIT(6)   /**< Request Active Message
+    UCP_FEATURE_AM           = UCS_BIT(6),  /**< Request Active Message
                                                  support */
+    UCP_FEATURE_GROUPS       = UCS_BIT(7)   /**< Request collective
+                                                 operations support */
 };
 
 
@@ -939,6 +943,21 @@ typedef struct ucp_params {
      * will override the number of endpoints set by @e estimated_num_ppn
      */
     size_t                             estimated_num_ppn;
+
+
+    /**
+     * Information about other processes running UCX on the same node, used for
+     * the UCG - Group operations (e.g. MPI collective operations). This includes
+     * both the total number of processes (including myself) and a zero-based
+     * index of my process, guaranteed to be unique among the local processes
+     * which this process will contact. Typically the process with index #0
+     * performs special duties in group-aware transports, and those transports
+     * need this information on every process.
+     *
+     * @note Both fields are indicated be the same bit in @ref field_mask.
+     */
+    uint32_t                           num_local_peers;
+    uint32_t                           my_local_peer_idx;
 } ucp_params_t;
 
 
@@ -1631,6 +1650,27 @@ static inline ucs_status_t ucp_init(const ucp_params_t *params,
     return ucp_init_version(UCP_API_MAJOR, UCP_API_MINOR, params, config,
                             context_p);
 }
+
+/**
+ * @ingroup UCP_CONTEXT
+ * @brief Release UCP application context.
+ *
+ * This routine finalizes and releases the resources associated with a
+ * @ref ucp_context_h "UCP application context".
+ *
+ * @warning An application cannot call any UCP routine
+ * once the UCP application context released.
+ *
+ * The cleanup process releases and shuts down all resources associated    with
+ * the application context. After calling this routine, calling any UCP
+ * routine without calling @ref ucp_init "UCP initialization routine" is invalid.
+ *
+ * @param [in] context_p   Handle to @ref ucp_context_h
+ *                         "UCP application context".
+ */
+ucs_status_t ucp_extend(ucp_context_h context, size_t extension_ctx_length,
+        ucp_ext_init_f init, ucp_ext_cleanup_f cleanup,
+        size_t *extension_ctx_offset_in_worker);
 
 
 /**

@@ -417,6 +417,12 @@ typedef enum uct_atomic_op {
 #define UCT_IFACE_FLAG_TAG_EAGER_BCOPY UCS_BIT(51) /**< Hardware tag matching bcopy eager support */
 #define UCT_IFACE_FLAG_TAG_EAGER_ZCOPY UCS_BIT(52) /**< Hardware tag matching zcopy eager support */
 #define UCT_IFACE_FLAG_TAG_RNDV_ZCOPY  UCS_BIT(53) /**< Hardware tag matching rendezvous zcopy support */
+
+        /* Multi-peer operations */
+#define UCT_IFACE_FLAG_BCAST            UCS_BIT(55) /**< one-to-many send operations */
+#define UCT_IFACE_FLAG_INCAST           UCS_BIT(56) /**< many-to-one receive operations */
+#define UCT_IFACE_FLAG_INCAST_REDUCABLE UCS_BIT(57) /**< pack callback may include reduction */
+
 /**
  * @}
  */
@@ -634,7 +640,11 @@ enum uct_iface_params_field {
     UCT_IFACE_PARAM_FIELD_ASYNC_EVENT_ARG   = UCS_BIT(13),
 
     /** Enables @ref uct_iface_params_t::async_event_cb */
-    UCT_IFACE_PARAM_FIELD_ASYNC_EVENT_CB    = UCS_BIT(14)
+    UCT_IFACE_PARAM_FIELD_ASYNC_EVENT_CB    = UCS_BIT(14),
+
+    /** Enables @ref uct_iface_params_t::coll_np and
+     *  @ref uct_iface_params_t::coll_id */
+    UCT_IFACE_PARAM_FIELD_COLL_INFO         = UCS_BIT(15)
 };
 
 /**
@@ -1045,6 +1055,12 @@ struct uct_iface_params {
      * read by user if the iface has @ref UCT_IFACE_FLAG_EVENT_ASYNC_CB
      * capability */
     uct_async_event_cb_t                         async_event_cb;
+
+    /** Intra-host group member information */
+    struct {
+        uint32_t                                 proc_cnt;
+        uint32_t                                 proc_idx;
+    } node_info;
 };
 
 
@@ -2405,6 +2421,7 @@ UCT_INLINE_API ucs_status_t uct_iface_fence(uct_iface_h iface, unsigned flags)
     return iface->ops.iface_fence(iface, flags);
 }
 
+
 /**
  * @ingroup UCT_AM
  * @brief Release AM descriptor
@@ -2418,6 +2435,25 @@ UCT_INLINE_API void uct_iface_release_desc(void *desc)
 {
     uct_recv_desc_t *release_desc = uct_recv_desc(desc);
     release_desc->cb(release_desc, desc);
+}
+
+
+/**
+ * @ingroup UCT_AM
+ * @brief Release a shared AM descriptor
+ *
+ * Release active message descriptor @a desc, which was passed to
+ * @ref uct_am_callback_t "the active message callback", and owned by the callee.
+ * Applies only to descriptors passed with @ref UCT_CB_PARAM_FLAG_SHARED .
+ *
+ * @param [in]  desc  Descriptor to release.
+ *
+ * @return 1 if the descriptor originated on the calling process, 0 otherwise.
+ *
+ */
+UCT_INLINE_API int uct_iface_release_shared_desc(uct_iface_h iface, void *desc)
+{
+    return iface->ops.iface_release_shared_desc(iface, uct_recv_desc(desc), desc);
 }
 
 

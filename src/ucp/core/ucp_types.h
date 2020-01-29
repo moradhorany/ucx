@@ -111,7 +111,9 @@ enum {
                                           defined AM */
     UCP_AM_ID_SINGLE_REPLY      =  26, /* Single fragment user defined AM
                                           carrying remote ep for reply */
-    UCP_AM_ID_LAST
+    UCP_AM_ID_LAST,
+    UCP_AM_ID_DISCARD           =  UCT_AM_ID_DISCARD, /* Discard such messages */
+    UCP_AM_ID_MAX               =  UCT_AM_ID_MAX  /* Total IDs available */
 };
 
 
@@ -149,6 +151,11 @@ typedef void (*ucp_am_tracer_t)(ucp_worker_h worker, uct_am_trace_type_t type,
  * Internal callback for UCP requests
  */
 typedef void (*ucp_request_callback_t)(ucp_request_t *req);
+
+/**
+ * Internal callback for UCP requests for collective operations
+ */
+typedef void (*ucp_request_collective_callback_t)(void *request, ucs_status_t status);
 
 
 #endif

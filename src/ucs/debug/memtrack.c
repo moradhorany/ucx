@@ -217,6 +217,34 @@ int ucs_posix_memalign(void **ptr, size_t boundary, size_t size, const char *nam
     return ret;
 }
 
+int ucs_posix_memalign_realloc(void **ptr, size_t boundary, size_t size,
+                               const char *name)
+{
+    void *tmp;
+    int ret;
+
+    /* first try to realloc() - the region may be extended (not guaranteed) */
+    tmp = ucs_realloc(*ptr, size, name);
+    if (!tmp) {
+        return -1;
+    }
+    if ((uintptr_t)tmp % boundary == 0) {
+        *ptr = tmp;
+        return 0;
+    }
+
+#if HAVE_POSIX_MEMALIGN
+    ret = posix_memalign(ptr, boundary, size);
+#else
+#error "Port me too"
+#endif
+    if (ret == 0) {
+        memcpy(*ptr, tmp, size);
+        ucs_free(tmp);
+    }
+    return ret;
+}
+
 void ucs_free(void *ptr)
 {
     ucs_memtrack_releasing(ptr);

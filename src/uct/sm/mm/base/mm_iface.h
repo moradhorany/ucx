@@ -24,6 +24,7 @@
 enum {
     UCT_MM_FIFO_ELEM_FLAG_OWNER  = UCS_BIT(0), /* new/old info */
     UCT_MM_FIFO_ELEM_FLAG_INLINE = UCS_BIT(1), /* if inline or not */
+    UCT_MM_FIFO_ELEM_FLAG_CACHED = UCS_BIT(2)
 };
 
 
@@ -211,16 +212,16 @@ typedef struct uct_mm_iface {
  * @param _cfg_prefix   Prefix for configuration variables.
  */
 #define UCT_MM_TL_DEFINE(_name, _md_ops, _rkey_unpack, _rkey_release, \
-                         _cfg_prefix) \
+                         _cfg_prefix, _tl_suffix) \
     \
-    UCT_MM_COMPONENT_DEFINE(uct_##_name##_component, _name, _md_ops, \
-                            _rkey_unpack, _rkey_release, _cfg_prefix) \
+    UCT_MM_COMPONENT_DEFINE(uct_##_name##_tl_suffix##_component, \
+            _name, _tl_suffix, _md_ops, _rkey_unpack, _rkey_release, _cfg_prefix) \
     \
-    UCT_TL_DEFINE(&(uct_##_name##_component).super, \
-                  _name, \
+    UCT_TL_DEFINE(&(uct_##_name##_tl_suffix##_component).super, \
+                  _name##_tl_suffix, \
                   uct_sm_base_query_tl_devices, \
-                  uct_mm_iface_t, \
-                  "MM_", \
+                  uct_mm##_tl_suffix##iface_t, \
+                  "MM", \
                   uct_mm_iface_config_table, \
                   uct_mm_iface_config_t);
 
@@ -262,11 +263,35 @@ void uct_mm_iface_set_fifo_ptrs(void *fifo_mem, uct_mm_fifo_ctl_t **fifo_ctl_p,
 UCS_CLASS_DECLARE_NEW_FUNC(uct_mm_iface_t, uct_iface_t, uct_md_h, uct_worker_h,
                            const uct_iface_params_t*, const uct_iface_config_t*);
 
+UCS_CLASS_DECLARE(uct_mm_iface_t, uct_md_h, uct_worker_h,
+                  const uct_iface_params_t*, const uct_iface_config_t*);
+
+
+ucs_status_t uct_mm_assign_desc_to_fifo_elem(uct_mm_iface_t *iface,
+                                             uct_mm_fifo_element_t *elem,
+                                             unsigned need_new_desc);
 
 void uct_mm_iface_release_desc(uct_recv_desc_t *self, void *desc);
 
-
 ucs_status_t uct_mm_flush();
 
+ucs_status_t uct_mm_iface_flush(uct_iface_h tl_iface, unsigned flags,
+                                uct_completion_t *comp);
+
+ucs_status_t uct_mm_iface_query(uct_iface_h tl_iface,
+                                uct_iface_attr_t *iface_attr);
+
+ucs_status_t uct_mm_iface_get_address(uct_iface_t *tl_iface,
+                                      uct_iface_addr_t *addr);
+
+int uct_mm_iface_is_reachable(const uct_iface_h tl_iface,
+                              const uct_device_addr_t *dev_addr,
+                              const uct_iface_addr_t *tl_iface_addr);
+
+unsigned uct_mm_iface_progress(uct_iface_h tl_iface);
+
+ucs_status_t uct_mm_iface_event_fd_get(uct_iface_h tl_iface, int *fd_p);
+
+ucs_status_t uct_mm_iface_event_fd_arm(uct_iface_h tl_iface, unsigned events);
 
 #endif

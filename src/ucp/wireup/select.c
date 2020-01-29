@@ -1436,6 +1436,70 @@ ucp_wireup_select_wireup_msg_lane(ucp_worker_h worker,
     return p2p_lane;
 }
 
+static ucp_lane_index_t
+ucp_wireup_add_incast_lane(const ucp_wireup_select_params_t *select_params,
+                           const ucp_wireup_select_info_t *am_info,
+                           ucp_err_handling_mode_t err_mode,
+                           ucp_wireup_select_context_t *select_ctx)
+{
+    ucp_ep_h ep                          = select_params->ep;
+    ucp_wireup_criteria_t criteria       = {0};
+    ucp_wireup_select_info_t select_info = {0};
+    ucs_status_t status;
+
+    if (!(ucp_ep_get_context_features(ep) & UCP_FEATURE_GROUPS) ||
+        (err_mode != UCP_ERR_HANDLING_MODE_NONE)) {
+        return UCS_OK;
+    }
+
+    criteria.title              = "incast";
+    criteria.remote_iface_flags = /* the same as local_iface_flags */
+    criteria.local_iface_flags  = UCT_IFACE_FLAG_INCAST;
+    criteria.calc_score         = ucp_wireup_am_score_func;
+
+    status = ucp_wireup_select_transport(select_params, &criteria,
+                                         UINT64_MAX, UINT64_MAX, UINT64_MAX,
+                                         UINT64_MAX, 0, &select_info);
+    if (status == UCS_OK) {
+        ucp_wireup_add_lane(select_params, &select_info, UCP_LANE_TYPE_INCAST,
+                            select_ctx);
+    }
+
+    return UCS_OK;
+}
+
+static ucp_lane_index_t
+ucp_wireup_add_bcast_lane(const ucp_wireup_select_params_t *select_params,
+                          const ucp_wireup_select_info_t *am_info,
+                          ucp_err_handling_mode_t err_mode,
+                          ucp_wireup_select_context_t *select_ctx)
+{
+    ucp_ep_h ep                          = select_params->ep;
+    ucp_wireup_criteria_t criteria       = {0};
+    ucp_wireup_select_info_t select_info = {0};
+    ucs_status_t status;
+
+    if (!(ucp_ep_get_context_features(ep) & UCP_FEATURE_GROUPS) ||
+        (err_mode != UCP_ERR_HANDLING_MODE_NONE)) {
+        return UCS_OK;
+    }
+
+    criteria.title              = "bcast";
+    criteria.remote_iface_flags = /* the same as local_iface_flags */
+    criteria.local_iface_flags  = UCT_IFACE_FLAG_BCAST;
+    criteria.calc_score         = ucp_wireup_am_score_func;
+
+    status = ucp_wireup_select_transport(select_params, &criteria,
+                                         UINT64_MAX, UINT64_MAX, UINT64_MAX,
+                                         UINT64_MAX, 0, &select_info);
+    if (status == UCS_OK) {
+        ucp_wireup_add_lane(select_params, &select_info, UCP_LANE_TYPE_BCAST,
+                            select_ctx);
+    }
+
+    return UCS_OK;
+}
+
 static UCS_F_NOINLINE void
 ucp_wireup_select_params_init(ucp_wireup_select_params_t *select_params,
                               ucp_ep_h ep, unsigned ep_init_flags,
@@ -1490,6 +1554,18 @@ ucp_wireup_search_lanes(const ucp_wireup_select_params_t *select_params,
 
     status = ucp_wireup_add_tag_lane(select_params, &am_info, err_mode,
                                      select_ctx);
+    if (status != UCS_OK) {
+        return status;
+    }
+
+    status = ucp_wireup_add_incast_lane(select_params, &am_info, err_mode,
+                                        select_ctx);
+    if (status != UCS_OK) {
+        return status;
+    }
+
+    status = ucp_wireup_add_bcast_lane(select_params, &am_info, err_mode,
+                                       select_ctx);
     if (status != UCS_OK) {
         return status;
     }
@@ -1571,6 +1647,12 @@ ucp_wireup_construct_lanes(const ucp_wireup_select_params_t *select_params,
         if (select_ctx->lane_descs[lane].lane_types & UCS_BIT(UCP_LANE_TYPE_TAG)) {
             ucs_assert(key->tag_lane == UCP_NULL_LANE);
             key->tag_lane = lane;
+        }
+        if (select_ctx->lane_descs[lane].lane_types & UCS_BIT(UCP_LANE_TYPE_INCAST)) {
+            key->incast_lane = lane;
+        }
+        if (select_ctx->lane_descs[lane].lane_types & UCS_BIT(UCP_LANE_TYPE_BCAST)) {
+            key->bcast_lane = lane;
         }
     }
 

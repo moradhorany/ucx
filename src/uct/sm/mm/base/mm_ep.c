@@ -21,18 +21,8 @@ typedef enum {
 } uct_mm_send_op_t;
 
 
-/* Check if the resources on the remote peer are available for sending to it.
- * i.e. check if the remote receive FIFO has room in it.
- * return 1 if can send.
- * return 0 if can't send.
- */
-#define UCT_MM_EP_IS_ABLE_TO_SEND(_head, _tail, _fifo_size) \
-    ucs_likely(((_head) - (_tail)) < (_fifo_size))
-
-
-static UCS_F_NOINLINE ucs_status_t
-uct_mm_ep_attach_remote_seg(uct_mm_ep_t *ep, uct_mm_seg_id_t seg_id,
-                            size_t length, void **address_p)
+ucs_status_t uct_mm_ep_attach_remote_seg(uct_mm_ep_t *ep, uct_mm_seg_id_t seg_id,
+                                         size_t length, void **address_p)
 {
     uct_mm_iface_t *iface = ucs_derived_of(ep->super.super.iface,
                                            uct_mm_iface_t);
@@ -65,26 +55,9 @@ uct_mm_ep_attach_remote_seg(uct_mm_ep_t *ep, uct_mm_seg_id_t seg_id,
     return UCS_OK;
 }
 
-static UCS_F_ALWAYS_INLINE ucs_status_t
-uct_mm_ep_get_remote_seg(uct_mm_ep_t *ep, uct_mm_seg_id_t seg_id, size_t length,
-                         void **address_p)
-{
-    khiter_t khiter;
-
-    /* fast path - segment is already present */
-    khiter = kh_get(uct_mm_remote_seg, &ep->remote_segs, seg_id);
-    if (ucs_likely(khiter != kh_end(&ep->remote_segs))) {
-        *address_p = kh_val(&ep->remote_segs, khiter).address;
-        return UCS_OK;
-    }
-
-    /* slow path - attach new segment */
-    return uct_mm_ep_attach_remote_seg(ep, seg_id, length, address_p);
-}
-
 
 /* send a signal to remote interface using Unix-domain socket */
-static void uct_mm_ep_signal_remote(uct_mm_ep_t *ep)
+void uct_mm_ep_signal_remote(uct_mm_ep_t *ep)
 {
     uct_mm_iface_t *iface = ucs_derived_of(ep->super.super.iface, uct_mm_iface_t);
     char dummy = 0;
@@ -118,7 +91,7 @@ static void uct_mm_ep_signal_remote(uct_mm_ep_t *ep)
     }
 }
 
-static UCS_CLASS_INIT_FUNC(uct_mm_ep_t, const uct_ep_params_t *params)
+UCS_CLASS_INIT_FUNC(uct_mm_ep_t, const uct_ep_params_t *params)
 {
     uct_mm_iface_t            *iface = ucs_derived_of(params->iface, uct_mm_iface_t);
     uct_mm_md_t               *md    = ucs_derived_of(iface->super.super.md, uct_mm_md_t);
@@ -211,12 +184,6 @@ static inline ucs_status_t uct_mm_ep_get_remote_elem(uct_mm_ep_t *ep, uint64_t h
     return UCS_OK;
 }
 
-static inline void uct_mm_ep_update_cached_tail(uct_mm_ep_t *ep)
-{
-    ucs_memory_cpu_load_fence();
-    ep->cached_tail = ep->fifo_ctl->tail;
-}
-
 /* A common mm active message sending function.
  * The first parameter indicates the origin of the call.
  * is_short = 1 - perform AM short sending
@@ -285,8 +252,7 @@ retry:
         }
 
         length       = pack_cb(UCS_PTR_BYTE_OFFSET(base_address,
-                                                   elem->desc.offset),
-                               arg);
+                                                   elem->desc.offset), arg);
         elem_flags   = 0;
         elem->length = length;
 
@@ -339,7 +305,8 @@ ucs_status_t uct_mm_ep_am_short(uct_ep_h tl_ep, uint8_t id, uint64_t header,
                                                   payload, NULL, NULL, 0);
 }
 
-ssize_t uct_mm_ep_am_bcopy(uct_ep_h tl_ep, uint8_t id, uct_pack_callback_t pack_cb,
+ssize_t uct_mm_ep_am_bcopy(uct_ep_h tl_ep, uint8_t id,
+                           uct_pack_callback_t pack_cb,
                            void *arg, unsigned flags)
 {
     uct_mm_iface_t *iface = ucs_derived_of(tl_ep->iface, uct_mm_iface_t);
@@ -416,10 +383,10 @@ ucs_arbiter_cb_result_t uct_mm_ep_process_pending(ucs_arbiter_t *arbiter,
     }
 }
 
-static ucs_arbiter_cb_result_t uct_mm_ep_abriter_purge_cb(ucs_arbiter_t *arbiter,
-                                                          ucs_arbiter_group_t *group,
-                                                          ucs_arbiter_elem_t *elem,
-                                                          void *arg)
+ucs_arbiter_cb_result_t uct_mm_ep_abriter_purge_cb(ucs_arbiter_t *arbiter,
+                                                   ucs_arbiter_group_t *group,
+                                                   ucs_arbiter_elem_t *elem,
+                                                   void *arg)
 {
     uct_mm_ep_t *ep                 = ucs_container_of(group, uct_mm_ep_t,
                                                        arb_group);

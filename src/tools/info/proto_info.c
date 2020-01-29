@@ -96,7 +96,15 @@ static void print_resource_usage(const resource_usage_t *usage_before,
 void print_ucp_info(int print_opts, ucs_config_print_flags_t print_flags,
                     uint64_t ctx_features, const ucp_ep_params_t *base_ep_params,
                     size_t estimated_num_eps, size_t estimated_num_ppn,
-                    unsigned dev_type_bitmap, const char *mem_size)
+                    unsigned dev_type_bitmap, const char *mem_size
+#if ENABLE_UCG
+                    ,const char *planner_name,
+                    ucg_group_member_index_t root_index,
+                    ucg_group_member_index_t my_index,
+                    const char *collective_type_name,
+                    ucg_group_member_index_t peer_count[UCG_GROUP_MEMBER_DISTANCE_LAST]
+#endif
+                    )
 {
     ucp_config_t *config;
     ucs_status_t status;
@@ -113,6 +121,7 @@ void print_ucp_info(int print_opts, ucs_config_print_flags_t print_flags,
 
     status = ucp_config_read(NULL, NULL, &config);
     if (status != UCS_OK) {
+        printf("<Failed to read UCP configuration>\n");
         return;
     }
 
@@ -136,6 +145,14 @@ void print_ucp_info(int print_opts, ucs_config_print_flags_t print_flags,
         ucp_config_modify(config, "NET_DEVICES", "");
     }
 
+#if ENABLE_UCG
+    ucg_context_h ucg_context;
+    if (ctx_features & UCP_FEATURE_GROUPS) {
+        status = ucg_init(&params, config, &ucg_context);
+        context = *(ucp_context_h*)ucg_context;
+        /* It isn't ideal, but the idea is NOT to mix UCG and UCP APIs anyway */
+    } else
+#endif
     status = ucp_init(&params, config, &context);
     if (status != UCS_OK) {
         printf("<Failed to create UCP context>\n");
@@ -151,7 +168,7 @@ void print_ucp_info(int print_opts, ucs_config_print_flags_t print_flags,
         print_resource_usage(&usage, "UCP context");
     }
 
-    if (!(print_opts & (PRINT_UCP_WORKER|PRINT_UCP_EP))) {
+    if (!(print_opts & (PRINT_UCP_WORKER|PRINT_UCP_EP|PRINT_UCG|PRINT_UCG_TOPO))) {
         goto out_cleanup_context;
     }
 
@@ -170,6 +187,41 @@ void print_ucp_info(int print_opts, ucs_config_print_flags_t print_flags,
         ucp_worker_print_info(worker, stdout);
         print_resource_usage(&usage, "UCP worker");
     }
+
+#if ENABLE_UCG
+    if (print_opts & PRINT_UCG) {
+        /* create a group with the generated paramters */
+        enum ucg_group_member_distance distance = UCG_GROUP_MEMBER_DISTANCE_SELF;
+        ucg_group_params_t group_params = {
+                .field_mask        = UCG_GROUP_PARAM_FIELD_MEMBER_COUNT |
+                                     UCG_GROUP_PARAM_FIELD_MEMBER_INDEX |
+                                     UCG_GROUP_PARAM_FIELD_DISTANCES    |
+                                     UCG_GROUP_PARAM_FIELD_REDUCE_CB    |
+                                     UCG_GROUP_PARAM_FIELD_RESOLVER_CB,
+                .distance = &distance,
+                .member_count = 1
+        };
+
+        ucg_group_h group;
+        status = ucg_group_create(worker, &group_params, &group);
+        if (status != UCS_OK) {
+            printf("<Failed to create UCG group>\n");
+            goto out_destroy_worker;
+        }
+
+        print_resource_usage(&usage, "UCG group");
+        ucg_group_destroy(group);
+    }
+
+    if (print_opts & PRINT_UCG_TOPO) {
+        ucg_group_member_index_t dist_len;
+        enum ucg_group_member_distance* dist;
+        if (UCS_OK == gen_ucg_topology(my_index, peer_count, &dist, &dist_len)) {
+            print_ucg_topology(planner_name, worker, root_index, my_index,
+                    collective_type_name, dist, dist_len, 1);
+        }
+    }
+#endif
 
     if (print_opts & PRINT_UCP_EP) {
         status = ucp_worker_get_address(worker, &address, &address_length);
@@ -205,6 +257,11 @@ void print_ucp_info(int print_opts, ucs_config_print_flags_t print_flags,
 out_destroy_worker:
     ucp_worker_destroy(worker);
 out_cleanup_context:
+#if ENABLE_UCG
+    if (ctx_features & UCP_FEATURE_GROUPS) {
+        ucg_cleanup(ucg_context);
+    } else
+#endif
     ucp_cleanup(context);
 out_release_config:
     ucp_config_release(config);
