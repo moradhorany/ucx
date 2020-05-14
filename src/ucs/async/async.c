@@ -1,5 +1,6 @@
 /**
 * Copyright (C) Mellanox Technologies Ltd. 2001-2011.  ALL RIGHTS RESERVED.
+* Copyright (C) Huawei Technologies Co., Ltd. 2020.  ALL RIGHTS RESERVED.
 *
 * See file LICENSE for terms.
 */
@@ -20,12 +21,12 @@
  * The handlers are used for timers and asynchronous events and are
  * saved in an internal data structure according to the handler->id which
  * must be unique. In case of a timer-handler, the handler id reuses the
- * unique timer->id assigned by the timerq implemetation.
- * In case of an asinchronous event, the handler->id is the event_fd.
+ * unique timer->id assigned by the timerq implementation.
+ * In case of an asynchronous event, the handler->id is the event_fd.
  * Since both begin from 0, in order to distinction between the two,
- * timer-handler ids begin at UCS_ASYNC_TIMER_ID_MIN, and are assigned
+ * timer-handler IDs begin at UCS_ASYNC_TIMER_ID_MIN, and are assigned
  * the value of timer->id + UCS_ASYNC_TIMER_ID_MIN.
- * When workig with the handler, the distinction between an event handler
+ * When working with the handler, the distinction between an event handler
  * and a timer handler occurs according to the handler->id:
  * if (handler->id > UCS_ASYNC_TIMER_ID_MIN) this is a timer
  */
@@ -47,13 +48,11 @@ KHASH_MAP_INIT_INT(ucs_async_handler, ucs_async_handler_t *);
 typedef struct ucs_async_global_context {
     khash_t(ucs_async_handler)     handlers;
     pthread_rwlock_t               handlers_lock;
-    volatile uint32_t              handler_id;
 } ucs_async_global_context_t;
 
 
 static ucs_async_global_context_t ucs_async_global_context = {
-    .handlers_lock   = PTHREAD_RWLOCK_INITIALIZER,
-    .handler_id      = UCS_ASYNC_TIMER_ID_MIN - 1
+    .handlers_lock   = PTHREAD_RWLOCK_INITIALIZER
 };
 
 
@@ -193,63 +192,23 @@ static void ucs_async_handler_put(ucs_async_handler_t *handler)
 static ucs_status_t ucs_async_handler_add(ucs_async_handler_t *handler)
 {
     khiter_t hash_it = 0;
-    ucs_async_handler_t *handler_from_hash;
     int hash_extra_status;
     ucs_status_t status;
-    khiter_t hash_it;
-    int i, id;
 
     pthread_rwlock_wrlock(&ucs_async_global_context.handlers_lock);
 
     ucs_assert_always(handler->refcount == 1);
 
-    /*
-     * Search for an empty key in the range [min_id, max_id)
-     * ucs_async_global_context.handler_id is used to generate "unique" keys.
-     */
-    for (i = min_id; i < max_id; ++i) {
-        id = min_id + (ucs_atomic_fadd32(&ucs_async_global_context.handler_id, 1) %
-                       (max_id - min_id));
-        hash_it = kh_put(ucs_async_handler, &ucs_async_global_context.handlers,
-                         id, &hash_extra_status);
-        if (hash_extra_status == UCS_KH_PUT_FAILED) {
-            ucs_error("Failed to add async handler " UCS_ASYNC_HANDLER_FMT
-                      " to hash", UCS_ASYNC_HANDLER_ARG(handler));
-            status = UCS_ERR_NO_MEMORY;
-            goto out_unlock;
-        } else if (hash_extra_status == UCS_KH_PUT_KEY_PRESENT) {
-            if ((max_id - min_id) == 1) {
-                handler_from_hash = kh_value(&ucs_async_global_context.handlers,
-                                             hash_it);
-                ucs_error("async handler %s() uses id %d,"
-                          " new async handler %s couldn't use this id",
-                          ucs_debug_get_symbol_name(handler_from_hash->cb), i,
-                          ucs_debug_get_symbol_name(handler->cb));
-                break;
-            }
-        } else {
-            handler->id = id;
-            ucs_assert(id != -1);
-            break;
-        }
-    }
-
-    if (handler->id == -1) {
-        ucs_error("Cannot add async handler %s() - id range [%d..%d) is full",
-                  ucs_debug_get_symbol_name(handler->cb), min_id, max_id);
-=======
-    /* Try to add handler with the requested id */
     hash_it = kh_put(ucs_async_handler, &ucs_async_global_context.handlers,
                      handler->id, &hash_extra_status);
-    if (hash_extra_status == -1) {
+    if (hash_extra_status == UCS_KH_PUT_FAILED) {
         ucs_error("Failed to add async handler " UCS_ASYNC_HANDLER_FMT
                   " to hash", UCS_ASYNC_HANDLER_ARG(handler));
         status = UCS_ERR_NO_MEMORY;
         goto out_unlock;
-    } else if (hash_extra_status == 0) {
-        ucs_error("Cannot add async handler %s() - id with id %d",
+    } else if (hash_extra_status == UCS_KH_PUT_KEY_PRESENT) {
+        ucs_error("Cannot add async handler %s() - id %i already occupied",
                   ucs_debug_get_symbol_name(handler->cb), handler->id);
->>>>>>> UCS: Rewrite timerq to use ucs_ptr_array_locked
         status = UCS_ERR_ALREADY_EXISTS;
         goto out_unlock;
     }
@@ -537,22 +496,23 @@ ucs_status_t ucs_async_add_timer(ucs_async_mode_t mode, ucs_time_t interval,
                                  ucs_async_event_cb_t cb, void *arg,
                                  ucs_async_context_t *async, int *timer_id_p)
 {
+    static short unsigned tmp_timer_idx = 0;
     ucs_status_t status;
-    static int tmp_timer_idx = 0;
     int handler_id;
 
     *timer_id_p = -1;
+
     status = ucs_async_method_call(mode, add_timer, async, interval, timer_id_p);
     if (status != UCS_OK) {
         goto err;
     }
 	
     if (*timer_id_p < 0) {
-        /* 
-         * This is the case if add_timer is set to 
+        /*
+         * This is the case if add_timer is set to
          * ucs_empty_function_return_success()
          */
-         *timer_id_p = tmp_timer_idx++;
+         *timer_id_p = (int)tmp_timer_idx++;
     } 
     handler_id = *timer_id_p + UCS_ASYNC_TIMER_ID_MIN;
 
