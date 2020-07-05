@@ -237,7 +237,7 @@ void ucp_proto_common_calc_perf(const ucp_proto_common_init_params_t *params,
      */
 
     bandwidth        = ucp_proto_common_iface_bandwidth(params, iface_attr);
-    overhead         = iface_attr->overhead;
+    overhead         = iface_attr->overhead_short;
     latency          = ucp_tl_iface_latency(context, &iface_attr->latency) +
                        params->latency;
     md_map           = UCS_BIT(ucp_proto_common_get_md_index(params, lane));

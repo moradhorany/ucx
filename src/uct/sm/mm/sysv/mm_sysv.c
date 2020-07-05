@@ -199,8 +199,6 @@ static uct_mm_md_mapper_ops_t uct_sysv_md_ops = {
 UCT_MM_TL_DEFINE(sysv, &uct_sysv_md_ops, uct_sysv_rkey_unpack,
                  uct_sysv_rkey_release, "SYSV_", _)
 UCT_MM_TL_DEFINE(sysv, &uct_sysv_md_ops, uct_sysv_rkey_unpack,
-                 uct_sysv_rkey_release, "SYSV_", _lcoll_)
+                 uct_sysv_rkey_release, "SYSV_BCAST_", _bcast_)
 UCT_MM_TL_DEFINE(sysv, &uct_sysv_md_ops, uct_sysv_rkey_unpack,
-                 uct_sysv_rkey_release, "SYSV_", _bcoll_)
-UCT_MM_TL_DEFINE(sysv, &uct_sysv_md_ops, uct_sysv_rkey_unpack,
-                 uct_sysv_rkey_release, "SYSV_", _ccoll_)
+                 uct_sysv_rkey_release, "SYSV_INCAST_", _incast_)

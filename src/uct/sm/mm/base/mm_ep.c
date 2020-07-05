@@ -24,8 +24,8 @@ typedef enum {
 ucs_status_t uct_mm_ep_attach_remote_seg(uct_mm_ep_t *ep, uct_mm_seg_id_t seg_id,
                                          size_t length, void **address_p)
 {
-    uct_mm_iface_t *iface = ucs_derived_of(ep->super.super.iface,
-                                           uct_mm_iface_t);
+    uct_mm_base_iface_t *iface = ucs_derived_of(ep->super.super.iface,
+                                                uct_mm_base_iface_t);
     uct_mm_remote_seg_t *remote_seg;
     ucs_status_t status;
     khiter_t khiter;
@@ -59,7 +59,8 @@ ucs_status_t uct_mm_ep_attach_remote_seg(uct_mm_ep_t *ep, uct_mm_seg_id_t seg_id
 /* send a signal to remote interface using Unix-domain socket */
 void uct_mm_ep_signal_remote(uct_mm_ep_t *ep)
 {
-    uct_mm_iface_t *iface = ucs_derived_of(ep->super.super.iface, uct_mm_iface_t);
+    uct_mm_base_iface_t *iface = ucs_derived_of(ep->super.super.iface,
+                                                uct_mm_base_iface_t);
     char dummy = 0;
     int ret;
 
@@ -93,7 +94,7 @@ void uct_mm_ep_signal_remote(uct_mm_ep_t *ep)
 
 UCS_CLASS_INIT_FUNC(uct_mm_ep_t, const uct_ep_params_t *params)
 {
-    uct_mm_iface_t            *iface = ucs_derived_of(params->iface, uct_mm_iface_t);
+    uct_mm_base_iface_t       *iface = ucs_derived_of(params->iface, uct_mm_base_iface_t);
     uct_mm_md_t               *md    = ucs_derived_of(iface->super.super.md, uct_mm_md_t);
     const uct_mm_iface_addr_t *addr  = (const void *)params->iface_addr;
     ucs_status_t status;
@@ -146,8 +147,9 @@ err:
 
 static UCS_CLASS_CLEANUP_FUNC(uct_mm_ep_t)
 {
-    uct_mm_iface_t  *iface = ucs_derived_of(self->super.super.iface, uct_mm_iface_t);
     uct_mm_remote_seg_t remote_seg;
+    uct_mm_base_iface_t *iface = ucs_derived_of(self->super.super.iface,
+                                                uct_mm_base_iface_t);
 
     uct_mm_ep_pending_purge(&self->super.super, NULL, NULL);
 
@@ -167,7 +169,8 @@ UCS_CLASS_DEFINE_DELETE_FUNC(uct_mm_ep_t, uct_ep_t);
 static inline ucs_status_t uct_mm_ep_get_remote_elem(uct_mm_ep_t *ep, uint64_t head,
                                                      uct_mm_fifo_element_t **elem)
 {
-    uct_mm_iface_t *iface = ucs_derived_of(ep->super.super.iface, uct_mm_iface_t);
+    uct_mm_base_iface_t *iface = ucs_derived_of(ep->super.super.iface,
+                                                uct_mm_base_iface_t);
     uint64_t elem_index;       /* the fifo elem's index in the fifo. */
                                /* must be smaller than fifo size */
     uint64_t returned_val;
@@ -191,8 +194,8 @@ static inline ucs_status_t uct_mm_ep_get_remote_elem(uct_mm_ep_t *ep, uint64_t h
  */
 static UCS_F_ALWAYS_INLINE ssize_t
 uct_mm_ep_am_common_send(uct_mm_send_op_t send_op, uct_mm_ep_t *ep,
-                         uct_mm_iface_t *iface, uint8_t am_id, size_t length,
-                         uint64_t header, const void *payload,
+                         uct_mm_base_iface_t *iface, uint8_t am_id,
+                         size_t length, uint64_t header, const void *payload,
                          uct_pack_callback_t pack_cb, void *arg,
                          unsigned flags)
 {
@@ -293,8 +296,8 @@ retry:
 ucs_status_t uct_mm_ep_am_short(uct_ep_h tl_ep, uint8_t id, uint64_t header,
                                 const void *payload, unsigned length)
 {
-    uct_mm_iface_t *iface = ucs_derived_of(tl_ep->iface, uct_mm_iface_t);
-    uct_mm_ep_t *ep = ucs_derived_of(tl_ep, uct_mm_ep_t);
+    uct_mm_base_iface_t *iface = ucs_derived_of(tl_ep->iface, uct_mm_base_iface_t);
+    uct_mm_ep_t         *ep    = ucs_derived_of(tl_ep, uct_mm_ep_t);
 
     UCT_CHECK_LENGTH(length + sizeof(header), 0,
                      iface->config.fifo_elem_size - sizeof(uct_mm_fifo_element_t),
@@ -309,8 +312,8 @@ ssize_t uct_mm_ep_am_bcopy(uct_ep_h tl_ep, uint8_t id,
                            uct_pack_callback_t pack_cb,
                            void *arg, unsigned flags)
 {
-    uct_mm_iface_t *iface = ucs_derived_of(tl_ep->iface, uct_mm_iface_t);
-    uct_mm_ep_t *ep = ucs_derived_of(tl_ep, uct_mm_ep_t);
+    uct_mm_base_iface_t *iface = ucs_derived_of(tl_ep->iface, uct_mm_base_iface_t);
+    uct_mm_ep_t         *ep    = ucs_derived_of(tl_ep, uct_mm_ep_t);
 
     return uct_mm_ep_am_common_send(UCT_MM_SEND_AM_BCOPY, ep, iface, id, 0, 0,
                                     NULL, pack_cb, arg, flags);
@@ -318,7 +321,8 @@ ssize_t uct_mm_ep_am_bcopy(uct_ep_h tl_ep, uint8_t id,
 
 static inline int uct_mm_ep_has_tx_resources(uct_mm_ep_t *ep)
 {
-    uct_mm_iface_t *iface = ucs_derived_of(ep->super.super.iface, uct_mm_iface_t);
+    uct_mm_base_iface_t *iface = ucs_derived_of(ep->super.super.iface,
+                                                uct_mm_base_iface_t);
     return UCT_MM_EP_IS_ABLE_TO_SEND(ep->fifo_ctl->head, ep->cached_tail,
                                      iface->config.fifo_size);
 }
@@ -326,8 +330,8 @@ static inline int uct_mm_ep_has_tx_resources(uct_mm_ep_t *ep)
 ucs_status_t uct_mm_ep_pending_add(uct_ep_h tl_ep, uct_pending_req_t *n,
                                    unsigned flags)
 {
-    uct_mm_iface_t *iface = ucs_derived_of(tl_ep->iface, uct_mm_iface_t);
-    uct_mm_ep_t *ep = ucs_derived_of(tl_ep, uct_mm_ep_t);
+    uct_mm_base_iface_t *iface = ucs_derived_of(tl_ep->iface, uct_mm_base_iface_t);
+    uct_mm_ep_t         *ep    = ucs_derived_of(tl_ep, uct_mm_ep_t);
 
     /* check if resources became available */
     if (uct_mm_ep_has_tx_resources(ep)) {
@@ -406,9 +410,9 @@ ucs_arbiter_cb_result_t uct_mm_ep_abriter_purge_cb(ucs_arbiter_t *arbiter,
 void uct_mm_ep_pending_purge(uct_ep_h tl_ep, uct_pending_purge_callback_t cb,
                              void *arg)
 {
-    uct_mm_iface_t *iface = ucs_derived_of(tl_ep->iface, uct_mm_iface_t);
-    uct_mm_ep_t *ep = ucs_derived_of(tl_ep, uct_mm_ep_t);
-    uct_purge_cb_args_t  args = {cb, arg};
+    uct_mm_base_iface_t *iface = ucs_derived_of(tl_ep->iface, uct_mm_base_iface_t);
+    uct_mm_ep_t         *ep    = ucs_derived_of(tl_ep, uct_mm_ep_t);
+    uct_purge_cb_args_t  args  = {cb, arg};
 
     ucs_arbiter_group_purge(&iface->arbiter, &ep->arb_group,
                             uct_mm_ep_abriter_purge_cb, &args);

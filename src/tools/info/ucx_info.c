@@ -50,6 +50,7 @@ static void usage() {
     printf("  -g              Show UCG information\n");
     printf("  -P <planner>    UCG Planner component to use\n");
     printf("  -C <coll_type>  UCG Collective operation type to plan (default: allreduce)\n");
+    printf("  -S <size>       UCG Collective operation buffer size  (a.k.a \"count\", default: 1)\n");
     printf("  -I <index>      UCG Group index to use as mine (a.k.a \"rank\", default: 0)\n");
     printf("  -T X:[Y:[Z]]    UCG Topology: number of peers of each distance (socket:host:fabric)\n");
 #endif
@@ -88,6 +89,7 @@ int main(int argc, char **argv)
     ucg_group_member_index_t root_index = 0;
     ucg_group_member_index_t my_index = 0;
     char *planner_name = NULL;
+    size_t count = 1;
 #endif
     ucs_config_print_flags_t print_flags;
     ucp_ep_params_t ucp_ep_params;
@@ -109,7 +111,7 @@ int main(int argc, char **argv)
     mem_size                 = NULL;
     dev_type_bitmap          = UINT_MAX;
     ucp_ep_params.field_mask = 0;
-    while ((c = getopt(argc, argv, "fahvcydbswpegt:n:u:D:m:N:P:T:C:I:r:R:")) != -1) {
+    while ((c = getopt(argc, argv, "fahvcydbswpegt:n:u:D:m:N:P:T:C:I:S:r:R:")) != -1) {
         switch (c) {
         case 'f':
             print_flags |= UCS_CONFIG_PRINT_CONFIG | UCS_CONFIG_PRINT_HEADER | UCS_CONFIG_PRINT_DOC;
@@ -169,6 +171,9 @@ int main(int argc, char **argv)
             break;
         case 'P':
             planner_name = optarg;
+            break;
+        case 'S':
+            count = atol(optarg);
             break;
 #endif
         case 't':
@@ -274,7 +279,8 @@ int main(int argc, char **argv)
         print_ucp_info(print_opts, print_flags, ucp_features, &ucp_ep_params,
                        ucp_num_eps, ucp_num_ppn, dev_type_bitmap, mem_size
 #if ENABLE_UCG
-                       ,planner_name, root_index, my_index, collective_type_name, peer_count
+                       ,planner_name, root_index, my_index, collective_type_name,
+                       count, peer_count
 #endif
                        );
     }

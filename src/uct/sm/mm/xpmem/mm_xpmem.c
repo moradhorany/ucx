@@ -555,8 +555,6 @@ static uct_mm_md_mapper_ops_t uct_xpmem_md_ops = {
 UCT_MM_TL_DEFINE(xpmem, &uct_xpmem_md_ops, uct_xpmem_rkey_unpack,
                  uct_xpmem_rkey_release, "XPMEM_", _)
 UCT_MM_TL_DEFINE(xpmem, &uct_xpmem_md_ops, uct_xpmem_rkey_unpack,
-                 uct_xpmem_rkey_release, "XPMEM_", _lcoll_)
+                 uct_xpmem_rkey_release, "XPMEM_BCAST_", _bcast_)
 UCT_MM_TL_DEFINE(xpmem, &uct_xpmem_md_ops, uct_xpmem_rkey_unpack,
-                 uct_xpmem_rkey_release, "XPMEM_", _bcoll_)
-UCT_MM_TL_DEFINE(xpmem, &uct_xpmem_md_ops, uct_xpmem_rkey_unpack,
-                 uct_xpmem_rkey_release, "XPMEM_", _ccoll_)
+                 uct_xpmem_rkey_release, "XPMEM_INCAST_", _incast_)

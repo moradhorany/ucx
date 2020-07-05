@@ -113,7 +113,9 @@ static const char *ucp_wireup_iface_flags[] = {
     [ucs_ilog2(UCT_IFACE_FLAG_TAG_EAGER_SHORT)]  = "tag eager short",
     [ucs_ilog2(UCT_IFACE_FLAG_TAG_EAGER_BCOPY)]  = "tag eager bcopy",
     [ucs_ilog2(UCT_IFACE_FLAG_TAG_EAGER_ZCOPY)]  = "tag eager zcopy",
-    [ucs_ilog2(UCT_IFACE_FLAG_TAG_RNDV_ZCOPY)]   = "tag rndv zcopy"
+    [ucs_ilog2(UCT_IFACE_FLAG_TAG_RNDV_ZCOPY)]   = "tag rndv zcopy",
+    [ucs_ilog2(UCT_IFACE_FLAG_BCAST)]            = "brodcast",
+    [ucs_ilog2(UCT_IFACE_FLAG_INCAST)]           = "incast"
 };
 
 static const char *ucp_wireup_event_flags[] = {
@@ -746,7 +748,7 @@ static double ucp_wireup_rma_score_func(ucp_context_h context,
 {
     /* best for 4k messages */
     return 1e-3 / (ucp_wireup_tl_iface_latency(context, iface_attr, remote_iface_attr) +
-                   iface_attr->overhead +
+                   iface_attr->overhead_short +
                    (4096.0 / ucs_min(ucp_tl_iface_bandwidth(context, &iface_attr->bandwidth),
                                      ucp_tl_iface_bandwidth(context, &remote_iface_attr->bandwidth))));
 }
@@ -879,7 +881,7 @@ double ucp_wireup_amo_score_func(ucp_context_h context,
 {
     /* best one-sided latency */
     return 1e-3 / (ucp_wireup_tl_iface_latency(context, iface_attr, remote_iface_attr) +
-                   iface_attr->overhead);
+                   iface_attr->overhead_short);
 }
 
 static ucs_status_t
@@ -933,7 +935,7 @@ static double ucp_wireup_am_score_func(ucp_context_h context,
 {
     /* best end-to-end latency */
     return 1e-3 / (ucp_wireup_tl_iface_latency(context, iface_attr, remote_iface_attr) +
-                   iface_attr->overhead + remote_iface_attr->overhead);
+                   iface_attr->overhead_short + remote_iface_attr->overhead_short);
 }
 
 static double ucp_wireup_rma_bw_score_func(ucp_context_h context,
@@ -948,7 +950,7 @@ static double ucp_wireup_rma_bw_score_func(ucp_context_h context,
                 ucs_min(ucp_tl_iface_bandwidth(context, &iface_attr->bandwidth),
                         ucp_tl_iface_bandwidth(context, &remote_iface_attr->bandwidth))) +
                 ucp_wireup_tl_iface_latency(context, iface_attr, remote_iface_attr) +
-                iface_attr->overhead +
+                iface_attr->overhead_short +
                 ucs_linear_func_apply(md_attr->reg_cost,
                                       UCP_WIREUP_RMA_BW_TEST_MSG_SIZE));
 }
@@ -1051,7 +1053,7 @@ static double ucp_wireup_am_bw_score_func(ucp_context_h context,
     double size = iface_attr->cap.am.max_bcopy;
     double t    = (size / ucs_min(ucp_tl_iface_bandwidth(context, &iface_attr->bandwidth),
                                   ucp_tl_iface_bandwidth(context, &remote_iface_attr->bandwidth))) +
-                  iface_attr->overhead + remote_iface_attr->overhead +
+                  iface_attr->overhead_short + remote_iface_attr->overhead_short +
                   ucp_wireup_tl_iface_latency(context, iface_attr, remote_iface_attr);
 
     return size / t * 1e-5;
@@ -1750,7 +1752,7 @@ static double ucp_wireup_aux_score_func(ucp_context_h context,
 {
     /* best end-to-end latency and larger bcopy size */
     return (1e-3 / (ucp_wireup_tl_iface_latency(context, iface_attr, remote_iface_attr) +
-            iface_attr->overhead + remote_iface_attr->overhead));
+            iface_attr->overhead_short + remote_iface_attr->overhead_short));
 }
 
 ucs_status_t

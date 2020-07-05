@@ -12,26 +12,33 @@
 #include <ucs/debug/memtrack.h>
 
 /* In accordance with @ref enum ucg_predefined */
-const char *collective_names[] = {
-    "barrier",
-    "reduce",
-    "gather",
-    "bcast",
-    "scatter",
-    "allreduce",
-    NULL
+const char *ucg_predefined_collective_names[] = {
+    [UCG_PRIMITIVE_BARRIER]            = "barrier",
+    [UCG_PRIMITIVE_REDUCE]             = "reduce",
+    [UCG_PRIMITIVE_GATHER]             = "gather",
+    [UCG_PRIMITIVE_GATHERV]            = "gatherv",
+    [UCG_PRIMITIVE_BCAST]              = "bcast",
+    [UCG_PRIMITIVE_SCATTER]            = "scatter",
+    [UCG_PRIMITIVE_SCATTERV]           = "scatterv",
+    [UCG_PRIMITIVE_ALLREDUCE]          = "allreduce",
+    [UCG_PRIMITIVE_ALLTOALL]           = "alltoall",
+    [UCG_PRIMITIVE_REDUCE_SCATTER]     = "reduce_scatter",
+    [UCG_PRIMITIVE_ALLGATHER]          = "allgather",
+    [UCG_PRIMITIVE_ALLGATHERV]         = "allgatherv",
+    [UCG_PRIMITIVE_ALLTOALLW]          = "alltoallv",
+    [UCG_PRIMITIVE_NEIGHBOR_ALLTOALLW] = "alltoallw"
 };
 
 #define EMPTY UCG_GROUP_MEMBER_DISTANCE_LAST
 
 ucg_address_t *worker_address = 0;
-ucs_status_t dummy_resolve_address(void *cb_group_obj,
-                                   ucg_group_member_index_t index,
-                                   ucg_address_t **addr, size_t *addr_len)
+int dummy_resolve_address(void *cb_group_obj,
+                          ucg_group_member_index_t index,
+                          ucg_address_t **addr, size_t *addr_len)
 {
     *addr = worker_address;
     *addr_len = 0; /* special debug flow: replace uct_ep_t with member indexes */
-    return UCS_OK;
+    return 0;
 }
 
 void dummy_release_address(ucg_address_t *addr) { }
@@ -112,7 +119,7 @@ ucs_status_t gen_ucg_topology(ucg_group_member_index_t me,
 void print_ucg_topology(const char *req_planner_name, ucg_worker_h worker,
         ucg_group_member_index_t root,
         ucg_group_member_index_t me,
-        const char *collective_type_name,
+        const char *collective_type_name, size_t dtype_count,
         enum ucg_group_member_distance *distance_array,
         ucg_group_member_index_t member_count, int is_verbose)
 {
@@ -141,7 +148,7 @@ void print_ucg_topology(const char *req_planner_name, ucg_worker_h worker,
             goto cleanup;
         }
     }
-    printf("] (Capital letter for root)\n");
+    printf("] (Capital letter for root and self)\n");
     if (!is_verbose) {
         return;
     }
@@ -151,14 +158,11 @@ void print_ucg_topology(const char *req_planner_name, ucg_worker_h worker,
     ucg_group_params_t group_params = {
             .field_mask        = UCG_GROUP_PARAM_FIELD_MEMBER_COUNT |
                                  UCG_GROUP_PARAM_FIELD_MEMBER_INDEX |
-                                 UCG_GROUP_PARAM_FIELD_DISTANCES    |
-                                 UCG_GROUP_PARAM_FIELD_REDUCE_CB    |
-                                 UCG_GROUP_PARAM_FIELD_RESOLVER_CB,
+                                 UCG_GROUP_PARAM_FIELD_CB_CONTEXT   |
+                                 UCG_GROUP_PARAM_FIELD_DISTANCES,
             .member_index      = me,
             .member_count      = member_count,
-            .distance          = distance_array,
-            .resolve_address_f = dummy_resolve_address,
-            .release_address_f = dummy_release_address
+            .distance          = distance_array
     };
     size_t worker_address_length;
     status = ucp_worker_get_address(worker, &worker_address, &worker_address_length);
@@ -175,22 +179,27 @@ void print_ucg_topology(const char *req_planner_name, ucg_worker_h worker,
     ucg_plan_t *plan;
     ucg_plan_component_t *planner;
     ucg_collective_params_t coll_params = {{0}};
-    coll_params.send.dt_len = 1;
-    coll_params.recv.dt_len = 1;
-    coll_params.send.count = 1;
-    coll_params.recv.count = 1;
     coll_params.send.buf = "send-buffer";
     coll_params.recv.buf = "recv-buffer";
+    coll_params.send.dt_len =
+    coll_params.recv.dt_len = 1;
+    coll_params.send.count =
+    coll_params.recv.count = dtype_count;
     coll_params.type.root = root;
 
-    const char **name = collective_names;
-    while  (*name) {
-        if (!strcmp(*name, collective_type_name)) {
+    unsigned i, last  = ucs_static_array_size(ucg_predefined_collective_names);
+    const char **name = ucg_predefined_collective_names;
+    for (i = 0; i < last; i++) {
+        if (!strcmp(ucg_predefined_collective_names[i], collective_type_name)) {
             coll_params.type.modifiers = UCG_GROUP_COLLECTIVE_MODIFIER_MOCK_EPS |
-                    ucg_predefined_modifiers[name - collective_names];
+                    ucg_predefined_modifiers[i];
             break;
         }
         name++;
+    }
+    if (i == last) {
+        status = UCS_ERR_UNSUPPORTED;
+        goto group_cleanup;
     }
 
     status = ucg_plan_select(group, req_planner_name, &coll_params, &planner);

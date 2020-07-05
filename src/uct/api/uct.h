@@ -347,6 +347,36 @@ typedef enum uct_atomic_op {
 
 
 /**
+ * @ingroup UCT_RESOURCE
+ * @brief Collective modifiers for length argument in UCT send functions.
+ *
+ * The enumeration allows specifying collective operation modifiers during UCT
+ * send operations, e.g. @ref uct_ep_am_short . This modifier will be combined
+ * with the length of the buffer (exact semantic depends on the collective type)
+ * and passed as the length argument to the function.
+ *
+ * Note: this information is passed from the sender to the receivers, so it only
+ * covers variants of one-to-many patterns.
+ */
+typedef enum uct_coll_dtype_mode {
+    UCT_COLL_DTYPE_MODE_PADDED,    /* Items are padded, e.g. in MPI_Reduce() */
+    UCT_COLL_DTYPE_MODE_PACKED,    /* Items are packed, e.g. in MPI_Scatter */
+    UCT_COLL_DTYPE_MODE_VAR_COUNT, /* Packed w/ displacement, e.g. MPI_Alltoallv */
+    UCT_COLL_DTYPE_MODE_VAR_DTYPE, /* Packed w/ datatype info, e.g. MPI_Alltoallw */
+    UCT_COLL_DTYPE_MODE_LAST
+} uct_coll_dtype_mode_t;
+
+#define UCT_COLL_DTYPE_MODE_BITS (2)
+#define UCT_COLL_DTYPE_MODE_PACK(_coll_op_type, _value) \
+    ((_coll_op_type) | ((_value) << UCT_COLL_DTYPE_MODE_BITS))
+
+#define UCT_COLL_DTYPE_MODE_UNPACK_VALUE(_packed) \
+    ((_packed) >> UCT_COLL_DTYPE_MODE_BITS)
+
+#define UCT_COLL_DTYPE_MODE_UNPACK_MODE(_packed) \
+    ((_packed) & UCS_MASK(UCT_COLL_DTYPE_MODE_BITS))
+
+/**
  * @defgroup UCT_RESOURCE_IFACE_CAP   UCT interface operations and capabilities
  * @ingroup UCT_RESOURCE
  *
@@ -418,10 +448,9 @@ typedef enum uct_atomic_op {
 #define UCT_IFACE_FLAG_TAG_EAGER_ZCOPY UCS_BIT(52) /**< Hardware tag matching zcopy eager support */
 #define UCT_IFACE_FLAG_TAG_RNDV_ZCOPY  UCS_BIT(53) /**< Hardware tag matching rendezvous zcopy support */
 
-        /* Multi-peer operations */
-#define UCT_IFACE_FLAG_BCAST            UCS_BIT(55) /**< one-to-many send operations */
-#define UCT_IFACE_FLAG_INCAST           UCS_BIT(56) /**< many-to-one receive operations */
-#define UCT_IFACE_FLAG_INCAST_REDUCABLE UCS_BIT(57) /**< pack callback may include reduction */
+        /* Collective (multi-peer) operations */
+#define UCT_IFACE_FLAG_BCAST           UCS_BIT(55) /**< one-to-many send operations */
+#define UCT_IFACE_FLAG_INCAST          UCS_BIT(56) /**< many-to-one send operations */
 
 /**
  * @}
@@ -535,11 +564,15 @@ enum uct_progress_types {
  * @brief Flags for active message send operation.
  */
 enum uct_msg_flags {
-    UCT_SEND_FLAG_SIGNALED = UCS_BIT(0) /**< Trigger @ref UCT_EVENT_RECV_SIG
-                                             event on remote side. Make best
-                                             effort attempt to avoid triggering
-                                             @ref UCT_EVENT_RECV event.
-                                             Ignored if not supported by interface. */
+    UCT_SEND_FLAG_SIGNALED  = UCS_BIT(0), /**< Trigger @ref UCT_EVENT_RECV_SIG
+                                               event on remote side. Make best
+                                               effort attempt to avoid triggering
+                                               @ref UCT_EVENT_RECV event.
+                                               Ignored if not supported by
+                                               interface. */
+    UCT_SEND_FLAG_PACK_LOCK = UCS_BIT(1)  /**< Provide locking so that calls to
+                                               the pack callback are mutually
+                                               exclusive (for shared memory) */
 };
 
 
@@ -869,6 +902,7 @@ struct uct_iface_attr {
             size_t           max_iov;    /**< Maximal @a iovcnt parameter in
                                               @ref ::uct_ep_put_zcopy
                                               @anchor uct_iface_attr_cap_put_max_iov */
+            uint64_t         coll_mode_flags; /**< from @ref uct_coll_dtype_mode_t */
         } put;                           /**< Attributes for PUT operations */
 
         struct {
@@ -886,6 +920,7 @@ struct uct_iface_attr {
             size_t           max_iov;    /**< Maximal @a iovcnt parameter in
                                               @ref uct_ep_get_zcopy
                                               @anchor uct_iface_attr_cap_get_max_iov */
+            uint64_t         coll_mode_flags; /**< from @ref uct_coll_dtype_mode_t */
         } get;                           /**< Attributes for GET operations */
 
         struct {
@@ -904,6 +939,7 @@ struct uct_iface_attr {
             size_t           max_iov;    /**< Maximal @a iovcnt parameter in
                                               @ref ::uct_ep_am_zcopy
                                               @anchor uct_iface_attr_cap_am_max_iov */
+            uint64_t         coll_mode_flags; /**< from @ref uct_coll_dtype_mode_t */
         } am;                            /**< Attributes for AM operations */
 
         struct {
@@ -945,6 +981,15 @@ struct uct_iface_attr {
             uint64_t         fop_flags;  /**< Attributes for atomic-fetch operations */
         } atomic32, atomic64;            /**< Attributes for atomic operations */
 
+        struct {
+            uint64_t         short_flags; /**< Flags from @ref uct_coll_dtype_mode_t
+                                               which are supported by short sends */
+            uint64_t         bcopy_flags; /**< Flags from @ref uct_coll_dtype_mode_t
+                                               which are supported by bcopy sends */
+            uint64_t         zcopy_flags; /**< Flags from @ref uct_coll_dtype_mode_t
+                                               which are supported by zcopy sends */
+        } coll_mode;
+
         uint64_t             flags;      /**< Flags from @ref UCT_RESOURCE_IFACE_CAP */
         uint64_t             event_flags;/**< Flags from @ref UCT_RESOURCE_IFACE_EVENT_CAP */
     } cap;                               /**< Interface capabilities */
@@ -962,7 +1007,8 @@ struct uct_iface_attr {
      * interface, this would usually be a combination of device and system
      * characteristics and determined at run time.
      */
-    double                   overhead;     /**< Message overhead, seconds */
+    double                   overhead_short; /**< Short message overhead, seconds */
+    double                   overhead_bcopy; /**< Bcopy message overhead, seconds */
     uct_ppn_bandwidth_t      bandwidth;    /**< Bandwidth model */
     ucs_linear_func_t        latency;      /**< Latency as function of number of
                                                 active endpoints */

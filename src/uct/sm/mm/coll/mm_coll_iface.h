@@ -8,11 +8,12 @@
 #ifndef UCT_MM_COLL_IFACE_H
 #define UCT_MM_COLL_IFACE_H
 
+#include <ucs/sys/compiler.h>
+#include <ucs/datastruct/ptr_array.h>
 #include <uct/sm/mm/base/mm_iface.h>
 
 typedef struct uct_mm_coll_iface_addr {
-    uct_mm_iface_addr_t rx;
-    uct_mm_iface_addr_t tx;
+    uct_mm_iface_addr_t super;
     uint32_t            coll_id;
 } UCS_S_PACKED uct_mm_coll_iface_addr_t;
 
@@ -20,58 +21,87 @@ typedef struct uct_mm_coll_fifo_element {
     uct_mm_fifo_element_t super;
     ucs_spinlock_t        lock;
     volatile uint32_t     pending;
-} UCS_V_ALIGNED(UCS_SYS_CACHE_LINE_SIZE) uct_mm_coll_fifo_element_t;
+
+    UCS_CACHELINE_PADDING(uct_mm_fifo_element_t,
+                          ucs_spinlock_t,
+                          uint32_t,
+                          uct_coll_dtype_mode_t,
+                          uint64_t);
+
+    uct_coll_dtype_mode_t op_mode;
+    uint64_t              header;
+} UCS_S_PACKED UCS_V_ALIGNED(UCS_SYS_CACHE_LINE_SIZE) uct_mm_coll_fifo_element_t;
 
 typedef struct uct_mm_coll_ep uct_mm_coll_ep_t;
+typedef struct uct_mm_bcast_ep uct_mm_bcast_ep_t;
 
 typedef struct uct_mm_coll_iface {
-    uct_mm_iface_t   super;         /* the "recv FIFO" is used for many-to-one
-                                       collectives, such as reduce or gather */
-    uct_mm_iface_t   bcast;         /* the "bcast FIFO" is used for one-to-many
-                                       collectives, such as bcast or scatter */
-    uint8_t           my_coll_id;   /* my (unique) index in the group */
-    uint8_t           sm_proc_cnt;  /* number of processes in the group */
-    uint8_t           ep_cnt;       /* endpoint array capacity (allocated) */
-
-    uct_mm_coll_ep_t *eps;          /* array of endpoints to different peers */
-    uct_mm_coll_ep_t *eps_limit;    /* limit of used endpoints in the array */
+    uct_mm_base_iface_t super;
+    uint8_t             my_coll_id;  /**< my (unique) index in the group */
+    uint8_t             sm_proc_cnt; /**< number of processes in the group */
+    ucs_ptr_array_t     ep_ptrs;     /**< endpoints to other connections */
+    uct_mm_coll_ep_t   *loopback_ep; /**< endpoint connected to this iface */
 } uct_mm_coll_iface_t;
 
-typedef struct uct_mm_coll_iface_subclass {
+typedef struct uct_mm_bcast_iface {
     uct_mm_coll_iface_t super;
-} uct_mm_lcoll_iface_t, uct_mm_bcoll_iface_t, uct_mm_ccoll_iface_t;
+} uct_mm_bcast_iface_t;
 
+typedef struct uct_mm_incast_iface {
+    uct_mm_coll_iface_t super;
+} uct_mm_incast_iface_t;
 
-UCS_CLASS_DECLARE_NEW_FUNC(uct_mm_lcoll_iface_t, uct_mm_coll_iface_t, uct_md_h, uct_worker_h,
-                           const uct_iface_params_t*, const uct_iface_config_t*);
-
-UCS_CLASS_DECLARE_NEW_FUNC(uct_mm_bcoll_iface_t, uct_mm_coll_iface_t, uct_md_h, uct_worker_h,
-                           const uct_iface_params_t*, const uct_iface_config_t*);
-
-UCS_CLASS_DECLARE_NEW_FUNC(uct_mm_ccoll_iface_t, uct_mm_coll_iface_t, uct_md_h, uct_worker_h,
-                           const uct_iface_params_t*, const uct_iface_config_t*);
-
-UCS_CLASS_DECLARE(uct_mm_lcoll_iface_t, uct_md_h, uct_worker_h,
+UCS_CLASS_DECLARE(uct_mm_coll_iface_t, uct_iface_ops_t*, uct_md_h, uct_worker_h,
                   const uct_iface_params_t*, const uct_iface_config_t*);
 
-UCS_CLASS_DECLARE(uct_mm_bcoll_iface_t, uct_md_h, uct_worker_h,
+UCS_CLASS_DECLARE(uct_mm_bcast_iface_t, uct_md_h, uct_worker_h,
                   const uct_iface_params_t*, const uct_iface_config_t*);
 
-UCS_CLASS_DECLARE(uct_mm_ccoll_iface_t, uct_md_h, uct_worker_h,
+UCS_CLASS_DECLARE(uct_mm_incast_iface_t, uct_md_h, uct_worker_h,
                   const uct_iface_params_t*, const uct_iface_config_t*);
 
-UCS_CLASS_DECLARE(uct_mm_coll_ep_t, const uct_ep_params_t *params);
+UCS_CLASS_DECLARE_NEW_FUNC(uct_mm_bcast_iface_t, uct_iface_t, uct_md_h,
+                           uct_worker_h, const uct_iface_params_t*,
+                           const uct_iface_config_t*);
 
-unsigned uct_mm_coll_iface_progress(uct_iface_h iface);
+UCS_CLASS_DECLARE_NEW_FUNC(uct_mm_incast_iface_t, uct_iface_t, uct_md_h,
+                           uct_worker_h, const uct_iface_params_t*,
+                           const uct_iface_config_t*);
 
-void uct_mm_coll_iface_init_ccoll_desc(uct_mm_coll_fifo_element_t* fifo_elem_p,
-                                       size_t bcopy_size_per_proc,
-                                       uint32_t proc_cnt);
+int uct_mm_coll_iface_is_unusable(uct_mm_coll_iface_t *iface,
+                                  const uct_iface_params_t *params);
 
-ucs_status_t uct_mm_coll_ep_create(const uct_ep_params_t *params, uct_ep_h *ep_p);
+ucs_status_t uct_mm_coll_iface_query(uct_iface_h tl_iface,
+                                     uct_iface_attr_t *iface_attr);
 
-void uct_mm_coll_ep_release_desc(uct_mm_coll_ep_t *coll_ep, void *desc);
+ucs_status_t uct_mm_coll_iface_get_address(uct_iface_t *tl_iface,
+                                           uct_iface_addr_t *addr);
 
-void uct_mm_coll_ep_destroy(uct_ep_h ep);
+int uct_mm_ep_process_recv_loopback(uct_mm_coll_iface_t *iface,
+                                    uct_mm_coll_fifo_element_t *elem);
+
+unsigned uct_mm_bcast_ep_poll_fifo(uct_mm_bcast_iface_t *iface,
+                                   uct_mm_bcast_ep_t *ep);
+
+
+static UCS_F_ALWAYS_INLINE void
+uct_mm_coll_iface_init_centralized_buffer(uint8_t* buffer, size_t size_per_proc,
+                                          uint32_t proc_cnt)
+{
+    int i;
+    for (i = 1; i < proc_cnt; i++) {
+        *(buffer + (i * size_per_proc) - 1) = 0;
+    }
+}
+
+
+static UCS_F_ALWAYS_INLINE void
+uct_mm_coll_iface_init_centralized_desc(uct_mm_coll_fifo_element_t* fifo_elem_p,
+                                        size_t bcopy_size_per_proc,
+                                        uint32_t proc_cnt)
+{
+    uct_mm_coll_iface_init_centralized_buffer(fifo_elem_p->super.desc_data,
+                                              bcopy_size_per_proc, proc_cnt);
+}
 
 #endif

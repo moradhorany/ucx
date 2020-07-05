@@ -102,6 +102,7 @@ void print_ucp_info(int print_opts, ucs_config_print_flags_t print_flags,
                     ucg_group_member_index_t root_index,
                     ucg_group_member_index_t my_index,
                     const char *collective_type_name,
+                    size_t dtype_count,
                     ucg_group_member_index_t peer_count[UCG_GROUP_MEMBER_DISTANCE_LAST]
 #endif
                     )
@@ -111,7 +112,7 @@ void print_ucp_info(int print_opts, ucs_config_print_flags_t print_flags,
     ucs_status_ptr_t status_ptr;
     ucp_context_h context;
     ucp_worker_h worker;
-    ucp_params_t params;
+    ucg_params_t params;
     ucp_worker_params_t worker_params;
     ucp_ep_params_t ep_params;
     ucp_address_t *address;
@@ -126,12 +127,12 @@ void print_ucp_info(int print_opts, ucs_config_print_flags_t print_flags,
     }
 
     memset(&params, 0, sizeof(params));
-    params.field_mask        = UCP_PARAM_FIELD_FEATURES |
-                               UCP_PARAM_FIELD_ESTIMATED_NUM_EPS |
-                               UCP_PARAM_FIELD_ESTIMATED_NUM_PPN;
-    params.features          = ctx_features;
-    params.estimated_num_eps = estimated_num_eps;
-    params.estimated_num_ppn = estimated_num_ppn;
+    params.super.field_mask        = UCP_PARAM_FIELD_FEATURES |
+                                     UCP_PARAM_FIELD_ESTIMATED_NUM_EPS |
+                                     UCP_PARAM_FIELD_ESTIMATED_NUM_PPN;
+    params.super.features          = ctx_features;
+    params.super.estimated_num_eps = estimated_num_eps;
+    params.super.estimated_num_ppn = estimated_num_ppn;
 
     get_resource_usage(&usage);
 
@@ -147,13 +148,15 @@ void print_ucp_info(int print_opts, ucs_config_print_flags_t print_flags,
 
 #if ENABLE_UCG
     ucg_context_h ucg_context;
+    params.address.lookup_f  = dummy_resolve_address;
+    params.address.release_f = dummy_release_address;
     if (ctx_features & UCP_FEATURE_GROUPS) {
         status = ucg_init(&params, config, &ucg_context);
         context = *(ucp_context_h*)ucg_context;
         /* It isn't ideal, but the idea is NOT to mix UCG and UCP APIs anyway */
     } else
 #endif
-    status = ucp_init(&params, config, &context);
+    status = ucp_init(&params.super, config, &context);
     if (status != UCS_OK) {
         printf("<Failed to create UCP context>\n");
         goto out_release_config;
@@ -195,9 +198,7 @@ void print_ucp_info(int print_opts, ucs_config_print_flags_t print_flags,
         ucg_group_params_t group_params = {
                 .field_mask        = UCG_GROUP_PARAM_FIELD_MEMBER_COUNT |
                                      UCG_GROUP_PARAM_FIELD_MEMBER_INDEX |
-                                     UCG_GROUP_PARAM_FIELD_DISTANCES    |
-                                     UCG_GROUP_PARAM_FIELD_REDUCE_CB    |
-                                     UCG_GROUP_PARAM_FIELD_RESOLVER_CB,
+                                     UCG_GROUP_PARAM_FIELD_DISTANCES,
                 .distance = &distance,
                 .member_count = 1
         };
@@ -218,7 +219,7 @@ void print_ucp_info(int print_opts, ucs_config_print_flags_t print_flags,
         enum ucg_group_member_distance* dist;
         if (UCS_OK == gen_ucg_topology(my_index, peer_count, &dist, &dist_len)) {
             print_ucg_topology(planner_name, worker, root_index, my_index,
-                    collective_type_name, dist, dist_len, 1);
+                    collective_type_name, dtype_count, dist, dist_len, 1);
         }
     }
 #endif

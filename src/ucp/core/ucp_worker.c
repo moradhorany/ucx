@@ -934,7 +934,7 @@ static int ucp_worker_iface_find_better(ucp_worker_h worker,
              *    except ...CONNECT_TO... caps. */
             ucs_test_all_flags(if_iter->attr.cap.flags, test_flags) &&
             /* 2. Has the same or better performance characteristics */
-            (if_iter->attr.overhead <= wiface->attr.overhead) &&
+            (if_iter->attr.overhead_short <= wiface->attr.overhead_short) &&
             (ucp_tl_iface_bandwidth(ctx, &if_iter->attr.bandwidth) >= bw_cur) &&
             /* swap latencies in args list since less is better */
             (ucp_score_prio_cmp(latency_cur,  if_iter->attr.priority,
@@ -1451,7 +1451,8 @@ static void ucp_worker_init_device_atomics(ucp_worker_h worker)
     dummy_iface_attr.bandwidth.dedicated = 1e12;
     dummy_iface_attr.bandwidth.shared    = 0;
     dummy_iface_attr.cap_flags           = UINT64_MAX;
-    dummy_iface_attr.overhead            = 0;
+    dummy_iface_attr.overhead_short      = 0;
+    dummy_iface_attr.overhead_bcopy      = 0;
     dummy_iface_attr.priority            = 0;
     dummy_iface_attr.lat_ovh             = 0;
 
@@ -1823,14 +1824,6 @@ static ucs_mpool_ops_t ucp_rkey_mpool_ops = {
     .obj_cleanup   = NULL
 };
 
-size_t ucp_worker_get_size(ucp_context_h context, unsigned *config_max)
-{
-    *config_max = ucs_min(UINT8_MAX,
-            (context->num_tls + 1) * (context->num_tls + 1) * context->num_tls);
-    return sizeof(ucp_worker_t) + sizeof(ucp_ep_config_t) * (*config_max) +
-            context->extension_size;
-}
-
 ucs_status_t ucp_worker_create(ucp_context_h context,
                                const ucp_worker_params_t *params,
                                ucp_worker_h *worker_p)
@@ -1840,9 +1833,8 @@ ucs_status_t ucp_worker_create(ucp_context_h context,
     ucp_worker_h worker;
     ucs_status_t status;
 
-    size_t worker_size = ucp_worker_get_size(context, &config_count);
-
-    worker = ucs_calloc(1, worker_size, "ucp worker");
+    worker = ucs_calloc(1, sizeof(ucp_worker_t) +
+                        context->extension_size, "ucp worker");
     if (worker == NULL) {
         return UCS_ERR_NO_MEMORY;
     }

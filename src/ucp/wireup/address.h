@@ -64,13 +64,14 @@ enum {
  * Remote interface attributes.
  */
 struct ucp_address_iface_attr {
-    uint64_t                    cap_flags;    /* Interface capability flags */
-    uint64_t                    event_flags;  /* Interface event capability flags */
-    double                      overhead;     /* Interface performance - overhead */
-    uct_ppn_bandwidth_t         bandwidth;    /* Interface performance - bandwidth */
-    int                         priority;     /* Priority of device */
-    double                      lat_ovh;      /* Latency overhead */
-    ucp_tl_iface_atomic_flags_t atomic;       /* Atomic operations */
+    uint64_t                    cap_flags;      /* Interface capability flags */
+    uint64_t                    event_flags;    /* Interface event capability flags */
+    double                      overhead_short; /* Interface performance - overhead (short) */
+    double                      overhead_bcopy; /* Interface performance - overhead (bcopy) */
+    uct_ppn_bandwidth_t         bandwidth;      /* Interface performance - bandwidth */
+    int                         priority;       /* Priority of device */
+    double                      lat_ovh;        /* Latency overhead */
+    ucp_tl_iface_atomic_flags_t atomic;         /* Atomic operations */
 };
 
 typedef struct ucp_address_entry_ep_addr {

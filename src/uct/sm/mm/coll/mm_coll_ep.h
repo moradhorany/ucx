@@ -13,57 +13,59 @@
 #include <uct/sm/mm/base/mm_ep.h>
 
 struct uct_mm_coll_ep {
-    uct_base_ep_t           super;
+    uct_mm_ep_t                 super;
+    uct_mm_coll_fifo_element_t *tx_elem;    /* next TX element pointer */
+    uint64_t                    tx_index;   /* next TX element index */
+    uint8_t                     tx_cnt;     /* shortcut to iface->sm_proc_cnt */
+    uint8_t                     coll_id;    /* ID of the connected remote peer */
+    uint8_t                     my_offset;  /* where to write in "batch mode" */
+    uint8_t                     fifo_shift; /* shortcut to iface->fifo_shift */
+    uint16_t                    elem_size;  /* fifo_elem_size used for RX */
+    unsigned                    fifo_mask;  /* shortcut to iface->fifo_mask */
+    unsigned                    seg_size;   /* bcopy segment size */
+    unsigned                    ref_count;  /* counts the uses of this slot */
+};
 
-    uct_mm_ep_t            *tx;              /* for sending messages to the root */
-    uct_mm_ep_t            *rx;              /* for receiving messages, broadcasted by a peer */
+struct uct_mm_bcast_ep {
+    uct_mm_coll_ep_t super;
+    uct_mm_fifo_check_t recv_check;
+};
 
-    uint8_t                 coll_id;         /* ID of the remote peer in this group */
-    uint8_t                 my_offset;       /* where to write in "batch mode" */
-    uint8_t                 fifo_shift;      /* shortcut to iface->fifo_shift */
-    uint8_t                 tx_cnt;          /* shortcut to iface->sm_proc_cnt */
+typedef struct uct_mm_incast_ep {
+    uct_mm_coll_ep_t super;
+} uct_mm_incast_ep_t;
 
-    unsigned                tx_index;        /* TX next writing location */
-    unsigned                rx_index;        /* RX next reading location */
+UCS_CLASS_DECLARE_NEW_FUNC(uct_mm_incast_ep_t, uct_mm_coll_ep_t, const uct_ep_params_t*);
+UCS_CLASS_DECLARE_NEW_FUNC(uct_mm_bcast_ep_t,  uct_mm_coll_ep_t, const uct_ep_params_t*);
 
-    unsigned                fifo_mask;       /* shortcut to iface->fifo_mask */
-    unsigned                rx_elem_size;    /* fifo_elem_size used for RX */
-    unsigned                tx_elem_size;    /* fifo_elem_size used for TX */
-    unsigned                ref_count;       /* counts the uses of this slot */
-
-    uint8_t                 is_flags_cached; /* indicates flags_cache usage */
-    uint8_t                 flags_cache;     /* last value of element flags */
-    uint16_t                reserved;        /* info: used 62 bytes out of 64 */
-
-    /* TODO: put bcopy segment size here, instead of iface->config.seg_size */
-} UCS_S_PACKED UCS_V_ALIGNED(UCS_SYS_CACHE_LINE_SIZE);
-
-UCS_CLASS_DECLARE_NEW_FUNC(uct_mm_coll_ep_t, uct_ep_t, const uct_ep_params_t*);
-UCS_CLASS_DECLARE_DELETE_FUNC(uct_mm_coll_ep_t, uct_ep_t);
+UCS_CLASS_DECLARE_DELETE_FUNC(uct_mm_incast_ep_t, uct_ep_t);
+UCS_CLASS_DECLARE_DELETE_FUNC(uct_mm_bcast_ep_t,  uct_ep_t);
 
 
-ssize_t uct_mm_lcoll_ep_am_bcopy(uct_ep_h tl_ep, uint8_t id,
-                                 uct_pack_callback_t pack_cb,
-                                 void *arg, unsigned flags);
-
-ssize_t uct_mm_bcoll_ep_am_bcopy(uct_ep_h tl_ep, uint8_t id,
-                                 uct_pack_callback_t pack_cb,
-                                 void *arg, unsigned flags);
-
-ssize_t uct_mm_ccoll_ep_am_bcopy(uct_ep_h tl_ep, uint8_t id,
-                                 uct_pack_callback_t pack_cb,
-                                 void *arg, unsigned flags);
-
-ucs_status_t uct_mm_bcoll_ep_am_short(uct_ep_h tl_ep, uint8_t id, uint64_t header,
+ucs_status_t uct_mm_bcast_ep_am_short(uct_ep_h ep, uint8_t id, uint64_t header,
                                       const void *payload, unsigned length);
+ucs_status_t uct_mm_incast_ep_am_short(uct_ep_h ep, uint8_t id, uint64_t header,
+                                       const void *payload, unsigned length);
 
-ucs_status_t uct_mm_ccoll_ep_am_short(uct_ep_h tl_ep, uint8_t id, uint64_t header,
-                                      const void *payload, unsigned length);
+ssize_t uct_mm_bcast_ep_am_bcopy(uct_ep_h ep, uint8_t id,
+                                 uct_pack_callback_t pack_cb,
+                                 void *arg, unsigned flags);
+ssize_t uct_mm_incast_ep_am_bcopy(uct_ep_h ep, uint8_t id,
+                                  uct_pack_callback_t pack_cb,
+                                  void *arg, unsigned flags);
 
-unsigned uct_mm_lcoll_iface_progress(uct_iface_h iface);
+ucs_status_t uct_mm_bcast_ep_am_zcopy(uct_ep_h ep, uint8_t id, const void *header,
+                                      unsigned header_length, const uct_iov_t *iov,
+                                      size_t iovcnt, unsigned flags,
+                                      uct_completion_t *comp);
+ucs_status_t uct_mm_incast_ep_am_zcopy(uct_ep_h ep, uint8_t id, const void *header,
+                                       unsigned header_length, const uct_iov_t *iov,
+                                       size_t iovcnt, unsigned flags,
+                                       uct_completion_t *comp);
 
-unsigned uct_mm_bcoll_iface_progress(uct_iface_h iface);
-
-unsigned uct_mm_ccoll_iface_progress(uct_iface_h iface);
+ucs_status_t uct_mm_bcast_ep_create(const uct_ep_params_t *params, uct_ep_h *ep_p);
+ucs_status_t uct_mm_incast_ep_create(const uct_ep_params_t *params, uct_ep_h *ep_p);
+void uct_mm_coll_ep_release_desc(uct_mm_coll_ep_t *ep, void *desc);
+void uct_mm_coll_ep_destroy(uct_ep_h ep);
 
 #endif

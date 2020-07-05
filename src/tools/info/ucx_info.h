@@ -53,11 +53,18 @@ void print_ucp_info(int print_opts, ucs_config_print_flags_t print_flags,
                     ucg_group_member_index_t root_index,
                     ucg_group_member_index_t my_index,
                     const char *collective_type_name,
+                    size_t dtype_count,
                     ucg_group_member_index_t peer_count[UCG_GROUP_MEMBER_DISTANCE_LAST]
 #endif
                     );
 
 #if ENABLE_UCG
+int dummy_resolve_address(void *cb_group_obj,
+                          ucg_group_member_index_t index,
+                          ucg_address_t **addr, size_t *addr_len);
+
+void dummy_release_address(ucg_address_t *addr);
+
 ucs_status_t gen_ucg_topology(ucg_group_member_index_t me,
         ucg_group_member_index_t peer_count[4],
         enum ucg_group_member_distance **distance_array_p,
@@ -65,7 +72,7 @@ ucs_status_t gen_ucg_topology(ucg_group_member_index_t me,
 
 void print_ucg_topology(const char *req_planner_name, ucg_worker_h worker,
         ucg_group_member_index_t root, ucg_group_member_index_t me,
-        const char *collective_type_name,
+        const char *collective_type_name, size_t dtype_count,
         enum ucg_group_member_distance *distance_array,
         ucg_group_member_index_t member_count, int is_verbose);
 #endif

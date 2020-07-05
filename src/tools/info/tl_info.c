@@ -169,7 +169,8 @@ static void print_iface_info(uct_worker_h worker, uct_md_h md,
                iface_attr.bandwidth.dedicated / UCS_MBYTE);
         printf("#              latency: ");
         PRINT_LINEAR_FUNC_NS(&iface_attr.latency);
-        printf("#             overhead: %-.0f nsec\n", iface_attr.overhead * 1e9);
+        printf("#             overhead (short): %-.0f nsec\n", iface_attr.overhead_short * 1e9);
+        printf("#             overhead (bcopy): %-.0f nsec\n", iface_attr.overhead_bcopy * 1e9);
 
         PRINT_CAP(PUT_SHORT, iface_attr.cap.flags, iface_attr.cap.put.max_short);
         PRINT_CAP(PUT_BCOPY, iface_attr.cap.flags, iface_attr.cap.put.max_bcopy);

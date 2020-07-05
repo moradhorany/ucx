@@ -316,9 +316,9 @@ static ucp_tl_alias_t ucp_tl_aliases[] = {
   { "ugni",  { "ugni_smsg", "ugni_udt:aux", "ugni_rdma", NULL } },
   { "cuda",  { "cuda_copy", "cuda_ipc", "gdr_copy", NULL } },
   { "rocm",  { "rocm_copy", "rocm_ipc", "rocm_gdr", NULL } },
-  { "sysv",  { "sysv_", "sysv_lcoll_", "sysv_bcoll_", "sysv_mcoll_" } },
-  { "posix", { "posix_", "posix_lcoll_", "posix_bcoll_", "posix_mcoll_" } },
-  { "xpmem", { "xpmem_", "xpmem_lcoll_", "xpmem_bcoll_", "xpmem_mcoll_" } },
+  { "sysv",  { "sysv_",  "sysv_bcast_",  "sysv_incast_" } },
+  { "posix", { "posix_", "posix_bcast_", "posix_incast_" } },
+  { "xpmem", { "xpmem_", "xpmem_bcast_", "xpmem_incast_" } },
   { NULL }
 };
 
@@ -1627,8 +1627,8 @@ ucs_status_t ucp_extend(ucp_context_h context, size_t extension_ctx_length,
         return UCS_ERR_NO_RESOURCE;
     }
 
-    unsigned dummy;
-    size_t current_worker_size      = ucp_worker_get_size(context, &dummy);
+    size_t current_worker_size      = sizeof(ucp_worker_t) +
+                                      context->extension_size;
     ucp_context_extension_t *ext    = UCS_ALLOC_CHECK(sizeof(*ext),
                                                       "context extension");
     ext->init                       = init;
