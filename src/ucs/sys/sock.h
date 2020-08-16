@@ -1,6 +1,7 @@
 /**
  * Copyright (C) Mellanox Technologies Ltd. 2019.  ALL RIGHTS RESERVED.
  * Copyright (c) 2019, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (C) Huawei Technologies Co., Ltd. 2020.  ALL RIGHTS RESERVED.
  *
  * See file LICENSE for terms.
  */
@@ -312,7 +313,7 @@ ucs_status_t ucs_socket_recv(int fd, void *data, size_t length);
 
 /**
  * Return size of a given sockaddr structure.
- * 
+ *
  * @param [in]   addr       Pointer to sockaddr structure.
  * @param [out]  size_p     Pointer to variable where size of
  *                          sockaddr_in/sockaddr_in6 structure will be written
@@ -451,6 +452,18 @@ ucs_status_t ucs_sockaddr_copy(struct sockaddr *dst_addr,
  * @param [in]   max_strlen  Maximum length of the if_str.
  */
 ucs_status_t ucs_sockaddr_get_ifname(int fd, char *ifname_str, size_t max_strlen);
+
+
+/**
+ * Return size of a given sockaddr structure.
+ *
+ * @param [in]   af         Address family to check.
+ * @param [out]  size_p     Pointer to variable where size of
+ *                          sockaddr_in/sockaddr_in6 structure will be written
+ *
+ * @return UCS_OK on success or UCS_ERR_INVALID_PARAM on failure.
+ */
+ucs_status_t ucs_address_family_sizeof_ip(sa_family_t af, size_t *size_p);
 
 
 /**

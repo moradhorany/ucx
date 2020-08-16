@@ -1,6 +1,7 @@
 /**
 * Copyright (C) Mellanox Technologies Ltd. 2001-2014.  ALL RIGHTS RESERVED.
 * Copyright (C) UT-Battelle, LLC. 2014. ALL RIGHTS RESERVED.
+* Copyright (C) Huawei Technologies Co., Ltd. 2020.  ALL RIGHTS RESERVED.
 * See file LICENSE for terms.
 */
 
@@ -698,7 +699,27 @@ int uct_ib_device_test_roce_gid_index(uct_ib_device_t *dev, uint8_t port_num,
     return 1;
 }
 
-ucs_status_t uct_ib_device_select_gid(uct_ib_device_t *dev, uint8_t port_num,
+int uct_ib_device_is_potentially_reachable(unsigned subnet_mask,
+                                           const uct_ib_device_gid_info_t *gid_info)
+{
+    size_t addr_size;
+
+    if (gid_info->roce_info.ver == UCT_IB_DEVICE_ROCE_V1) {
+        return 1;
+    }
+
+    /*
+     * If the subnet mask covers the entire address, that means we're in a
+     * non-routable subnet and should only use RoCEv1.
+     */
+    ucs_address_family_sizeof_ip(gid_info->roce_info.addr_family, &addr_size);
+    ucs_assert(subnet_mask <= (addr_size << 3));
+    return (subnet_mask < (addr_size << 3));
+}
+
+ucs_status_t uct_ib_device_select_gid(uct_ib_device_t *dev,
+                                      uint8_t port_num,
+                                      unsigned subnet_mask,
                                       uct_ib_device_gid_info_t *gid_info)
 {
     static const uct_ib_roce_version_info_t roce_prio[] = {
@@ -729,6 +750,7 @@ ucs_status_t uct_ib_device_select_gid(uct_ib_device_t *dev, uint8_t port_num,
 
             if ((roce_prio[prio_idx].ver         == gid_info_tmp.roce_info.ver) &&
                 (roce_prio[prio_idx].addr_family == gid_info_tmp.roce_info.addr_family) &&
+                uct_ib_device_is_potentially_reachable(subnet_mask, &gid_info_tmp) &&
                 uct_ib_device_test_roce_gid_index(dev, port_num, &gid_info_tmp.gid, i)) {
 
                 gid_info->gid_index = i;

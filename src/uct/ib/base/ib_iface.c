@@ -1,5 +1,6 @@
 /**
 * Copyright (C) Mellanox Technologies Ltd. 2001-2014.  ALL RIGHTS RESERVED.
+* Copyright (C) Huawei Technologies Co., Ltd. 2020.  ALL RIGHTS RESERVED.
 *
 * See file LICENSE for terms.
 */
@@ -548,8 +549,25 @@ ucs_status_t uct_ib_iface_get_device_address(uct_iface_h tl_iface,
     return UCS_OK;
 }
 
+static int uct_ib_iface_roce_is_reachable_via_routing(unsigned subnet_mask,
+        const uct_ib_device_gid_info_t *local_gid_info,
+        const uct_ib_address_t *remote_ib_addr)
+{
+    size_t size;
+
+    if (!uct_ib_device_is_potentially_reachable(subnet_mask, local_gid_info)) {
+        return 0;
+    }
+
+    ucs_address_family_sizeof_ip(local_gid_info->roce_info.addr_family, &size);
+    size = sizeof(local_gid_info->gid) + (subnet_mask >> 3) - size;
+
+    return (0 == memcmp(&local_gid_info->gid, &remote_ib_addr->flags + 1, size));
+}
+
 static int uct_ib_iface_roce_is_reachable(const uct_ib_device_gid_info_t *local_gid_info,
-                                          const uct_ib_address_t *remote_ib_addr)
+                                          const uct_ib_address_t *remote_ib_addr,
+                                          unsigned subnet_mask)
 {
     sa_family_t local_ib_addr_af         = local_gid_info->roce_info.addr_family;
     uct_ib_roce_version_t local_roce_ver = local_gid_info->roce_info.ver;
@@ -591,7 +609,8 @@ static int uct_ib_iface_roce_is_reachable(const uct_ib_device_gid_info_t *local_
         return 0;
     }
 
-    return 1;
+    return uct_ib_iface_roce_is_reachable_via_routing(subnet_mask,
+            local_gid_info, remote_ib_addr);
 }
 
 int uct_ib_iface_is_reachable(const uct_iface_h tl_iface,
@@ -599,6 +618,7 @@ int uct_ib_iface_is_reachable(const uct_iface_h tl_iface,
                               const uct_iface_addr_t *iface_addr)
 {
     uct_ib_iface_t *iface           = ucs_derived_of(tl_iface, uct_ib_iface_t);
+    unsigned subnet_mask            = uct_ib_iface_md(iface)->config.subnet_mask;
     int is_local_eth                = uct_ib_iface_is_roce(iface);
     const uct_ib_address_t *ib_addr = (const void*)dev_addr;
     uct_ib_address_pack_params_t params;
@@ -620,7 +640,7 @@ int uct_ib_iface_is_reachable(const uct_iface_h tl_iface,
         /* there shouldn't be a lid and the UCT_IB_ADDRESS_FLAG_LINK_LAYER_ETH
          * flag should be on. If reachable, the remote and local RoCE versions
          * and address families have to be the same */
-        return uct_ib_iface_roce_is_reachable(&iface->gid_info, ib_addr);
+        return uct_ib_iface_roce_is_reachable(&iface->gid_info, ib_addr, subnet_mask);
     } else {
         /* local and remote have different link layers and therefore are unreachable */
         return 0;
@@ -1102,13 +1122,16 @@ int uct_ib_iface_is_roce_v2(uct_ib_iface_t *iface, uct_ib_device_t *dev)
 ucs_status_t uct_ib_iface_init_roce_gid_info(uct_ib_iface_t *iface,
                                              size_t md_config_index)
 {
+    uct_ib_md_t *md      = uct_ib_iface_md(iface);
     uct_ib_device_t *dev = uct_ib_iface_device(iface);
     uint8_t port_num     = iface->config.port_num;
+
 
     ucs_assert(uct_ib_iface_is_roce(iface));
 
     if (md_config_index == UCS_ULUNITS_AUTO) {
-        return uct_ib_device_select_gid(dev, port_num, &iface->gid_info);
+        return uct_ib_device_select_gid(dev, port_num, md->config.subnet_mask,
+                                        &iface->gid_info);
     }
 
     return uct_ib_device_query_gid_info(dev->ibv_context, uct_ib_device_name(dev),

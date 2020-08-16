@@ -1,6 +1,7 @@
 /**
 * Copyright (C) Mellanox Technologies Ltd. 2019.  ALL RIGHTS RESERVED.
 * Copyright (c) 2019, NVIDIA CORPORATION. All rights reserved.
+* Copyright (C) Huawei Technologies Co., Ltd. 2020.  ALL RIGHTS RESERVED.
 *
 * See file LICENSE for terms.
 */
@@ -795,6 +796,21 @@ ucs_status_t ucs_sockaddr_get_ifname(int fd, char *ifname_str, size_t max_strlen
     freeifaddrs(ifaddrs);
 
     return status;
+}
+
+ucs_status_t ucs_address_family_sizeof_ip(sa_family_t af, size_t *size_p)
+{
+    switch (af) {
+    case AF_INET:
+        *size_p = sizeof(struct in_addr);
+        return UCS_OK;
+    case AF_INET6:
+        *size_p = sizeof(struct in6_addr);
+        return UCS_OK;
+    default:
+        ucs_error("unknown address family: %d", af);
+        return UCS_ERR_INVALID_PARAM;
+    }
 }
 
 const char *ucs_sockaddr_address_family_str(sa_family_t af)
