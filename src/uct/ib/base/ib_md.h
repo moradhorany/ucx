@@ -2,7 +2,6 @@
  * Copyright (C) Mellanox Technologies Ltd. 2001-2016.  ALL RIGHTS RESERVED.
  * Copyright (C) The University of Tennessee and The University
  *               of Tennessee Research Foundation. 2016. ALL RIGHTS RESERVED.
- * Copyright (C) Huawei Technologies Co., Ltd. 2020.  ALL RIGHTS RESERVED.
  *
  * See file LICENSE for terms.
  */
@@ -83,7 +82,6 @@ typedef struct uct_ib_md_ext_config {
     } odp;
 
     size_t                   gid_index;    /**< IB GID index to use  */
-    unsigned                 subnet_mask;  /**< Determine remote IP reachability */
 
     size_t                   min_mt_reg;   /**< Multi-threaded registration threshold */
     size_t                   mt_reg_chunk; /**< Multi-threaded registration chunk */

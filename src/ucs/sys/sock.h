@@ -453,6 +453,22 @@ ucs_status_t ucs_sockaddr_copy(struct sockaddr *dst_addr,
  */
 ucs_status_t ucs_sockaddr_get_ifname(int fd, char *ifname_str, size_t max_strlen);
 
+/**
+ * Copy the IP address associated with the given network interface.
+ *
+ * @param [in]   if_name     Interface name.
+ * @param [out]  addr        The IP address of the given interface.
+ */
+ucs_status_t ucs_sockaddr_get_ifaddr(const char *if_name, struct sockaddr_in *addr);
+
+/**
+ * Copy the IP subnet mask associated with the given network interface.
+ *
+ * @param [in]   if_name     Interface name.
+ * @param [out]  addr        The IP address of the given interface.
+ */
+ucs_status_t ucs_sockaddr_get_ifmask(const char *if_name, struct sockaddr_in *mask);
+
 
 /**
  * Return size of a given sockaddr structure.

@@ -148,6 +148,9 @@ struct uct_ib_iface_config {
     /* Number of paths to expose for the interface  */
     unsigned long           num_paths;
 
+    /* Whether to use local IP address and subnet mask for RoCE(v2) routing */
+    int                     rocev2_use_netmask;
+
     /* Multiplier for RoCE LAG UDP source port calculation */
     unsigned                roce_path_factor;
 
@@ -243,6 +246,7 @@ struct uct_ib_iface {
     uint16_t                  pkey_index;
     uint16_t                  pkey;
     uint8_t                   addr_size;
+    uint8_t                   addr_prefix_bits;
     uct_ib_device_gid_info_t  gid_info;
 
     struct {
@@ -596,6 +600,16 @@ static UCS_F_ALWAYS_INLINE void
 uct_ib_fence_info_init(uct_ib_fence_info_t* fence)
 {
     fence->fence_beat = 0;
+}
+
+
+static UCS_F_ALWAYS_INLINE
+size_t uct_ib_gid_offset_of_roce_v2_addr(sa_family_t af)
+{
+    size_t addr_size;
+    ucs_address_family_sizeof_ip(af, &addr_size);
+
+    return sizeof(union ibv_gid) - addr_size;
 }
 
 #endif

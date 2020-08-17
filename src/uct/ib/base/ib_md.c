@@ -2,7 +2,6 @@
  * Copyright (C) Mellanox Technologies Ltd. 2001-2020.  ALL RIGHTS RESERVED.
  * Copyright (C) The University of Tennessee and The University
  *               of Tennessee Research Foundation. 2016. ALL RIGHTS RESERVED.
- * Copyright (C) Huawei Technologies Co., Ltd. 2020.  ALL RIGHTS RESERVED.
  *
  * See file LICENSE for terms.
  */
@@ -147,14 +146,6 @@ static ucs_config_field_t uct_ib_md_config_table[] = {
      "Relevant for IB link layer only\n"
      "For example a filter for the default subnet prefix can be specified as: fe80:0:0:0",
      ucs_offsetof(uct_ib_md_config_t, subnet_prefix), UCS_CONFIG_TYPE_STRING},
-
-    {"SUBNET_MASK", "0",
-     "IP subnet mask - to determine which remote IPv4/6 addresses are reachable. "
-     "Relevant for Ethernet link layer only\n"
-     "For example, a subnet mask of 24 matches IPv4 addresses like 1.2.3.*\n"
-     "If this value is 0 - every remote IP address is assumed to be reachable.\n"
-     "If set to the length of the address (e.g. 32 for IPv4) - only RoCEv1 is used.",
-     ucs_offsetof(uct_ib_md_config_t, ext.subnet_mask), UCS_CONFIG_TYPE_UINT},
 
     {"GPU_DIRECT_RDMA", "try",
      "Use GPU Direct RDMA for HCA to access GPU pages directly\n",

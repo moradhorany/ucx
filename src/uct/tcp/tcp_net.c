@@ -105,37 +105,6 @@ ucs_status_t uct_tcp_netif_caps(const char *if_name, double *latency_p,
     return UCS_OK;
 }
 
-ucs_status_t uct_tcp_netif_inaddr(const char *if_name, struct sockaddr_in *ifaddr,
-                                  struct sockaddr_in *netmask)
-{
-    ucs_status_t status;
-    struct ifreq ifra, ifrnm;
-
-    status = ucs_netif_ioctl(if_name, SIOCGIFADDR, &ifra);
-    if (status != UCS_OK) {
-        return status;
-    }
-
-    if (netmask != NULL) {
-        status = ucs_netif_ioctl(if_name, SIOCGIFNETMASK, &ifrnm);
-        if (status != UCS_OK) {
-            return status;
-        }
-    }
-
-    if ((ifra.ifr_addr.sa_family != AF_INET) ) {
-        ucs_error("%s address is not INET", if_name);
-        return UCS_ERR_INVALID_ADDR;
-    }
-
-    memcpy(ifaddr,  (struct sockaddr_in*)&ifra.ifr_addr,  sizeof(*ifaddr));
-    if (netmask != NULL) {
-        memcpy(netmask, (struct sockaddr_in*)&ifrnm.ifr_addr, sizeof(*netmask));
-    }
-
-    return UCS_OK;
-}
-
 ucs_status_t uct_tcp_netif_is_default(const char *if_name, int *result_p)
 {
     static const char *filename = "/proc/net/route";

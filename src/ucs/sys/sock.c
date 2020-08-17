@@ -798,6 +798,38 @@ ucs_status_t ucs_sockaddr_get_ifname(int fd, char *ifname_str, size_t max_strlen
     return status;
 }
 
+static ucs_status_t ucs_sockaddr_ifreq(const char *if_name,
+                                       unsigned long request,
+                                       struct sockaddr_in *dest)
+{
+    ucs_status_t status;
+    struct ifreq ifr;
+
+    status = ucs_netif_ioctl(if_name, request, &ifr);
+    if (status != UCS_OK) {
+        return status;
+    }
+
+    if ((ifr.ifr_addr.sa_family != AF_INET) ) {
+        ucs_error("%s address is not INET", if_name);
+        return UCS_ERR_INVALID_ADDR;
+    }
+
+    memcpy(dest, (struct sockaddr_in*)&ifr.ifr_addr, sizeof(*dest));
+
+    return UCS_OK;
+}
+
+ucs_status_t ucs_sockaddr_get_ifaddr(const char *if_name, struct sockaddr_in *addr)
+{
+    return ucs_sockaddr_ifreq(if_name, SIOCGIFADDR, addr);
+}
+
+ucs_status_t ucs_sockaddr_get_ifmask(const char *if_name, struct sockaddr_in *mask)
+{
+    return ucs_sockaddr_ifreq(if_name, SIOCGIFNETMASK, mask);
+}
+
 ucs_status_t ucs_address_family_sizeof_ip(sa_family_t af, size_t *size_p)
 {
     switch (af) {

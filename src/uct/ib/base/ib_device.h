@@ -255,28 +255,13 @@ const uct_ib_device_spec_t* uct_ib_device_spec(uct_ib_device_t *dev);
  * Select the best gid to use and set its information on the RoCE port -
  * gid index, RoCE version and address family.
  *
- * @param [in] subnet_mask      Subnet mask, in bits (e.g. 24 for 1.2.3.*).
- * @param [in] gid_info         Information including the gid itself, the
- *                              port's RoCE version and address family.
- *
- * @return whether the gid is potentially reachable, based on the subnet mask.
- */
-int uct_ib_device_is_potentially_reachable(unsigned subnet_mask,
-                                           const uct_ib_device_gid_info_t *gid_info);
-
-/**
- * Select the best gid to use and set its information on the RoCE port -
- * gid index, RoCE version and address family.
- *
  * @param [in]  dev             IB device.
  * @param [in]  port_num        Port number.
- * @param [in]  subnet_mask      Subnet mask, in bits (e.g. 24 for 1.2.3.*).
  * @param [out] gid_info        Filled with the selected gid index and the
  *                              port's RoCE version and address family.
  */
 ucs_status_t uct_ib_device_select_gid(uct_ib_device_t *dev,
                                       uint8_t port_num,
-                                      unsigned subnet_mask,
                                       uct_ib_device_gid_info_t *gid_info);
 
 
@@ -348,6 +333,11 @@ ucs_status_t uct_ib_device_create_ah_cached(uct_ib_device_t *dev,
                                             struct ibv_ah **ah_p);
 
 void uct_ib_device_cleanup_ah_cached(uct_ib_device_t *dev);
+
+ucs_status_t uct_ib_device_get_roce_ndev_name(uct_ib_device_t *dev,
+                                              uint8_t port_num,
+                                              char *ndev_name,
+                                              size_t max);
 
 unsigned uct_ib_device_get_roce_lag_level(uct_ib_device_t *dev,
                                           uint8_t port_num);
