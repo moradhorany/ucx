@@ -251,6 +251,7 @@ void uct_ib_device_cleanup(uct_ib_device_t *dev);
  */
 const uct_ib_device_spec_t* uct_ib_device_spec(uct_ib_device_t *dev);
 
+
 /**
  * Select the best gid to use and set its information on the RoCE port -
  * gid index, RoCE version and address family.
