@@ -566,7 +566,7 @@ static int uct_ib_iface_roce_is_reachable_via_routing(unsigned prefix_bits,
 
     /* If IB is configured to assume any RoCEv2 address is reachable - finish */
     if (prefix_bits == 0) {
-        return 0;
+        return 1;
     }
 
     if (local_gid_info->roce_info.ver != UCT_IB_DEVICE_ROCE_V2) {
@@ -1197,14 +1197,16 @@ ucs_status_t uct_ib_iface_init_roce_mask_info(uct_ib_iface_t *iface,
     }
 
     ucs_address_family_sizeof_ip(mask.sin_family, &addr_size);
-    addr_ptr = UCS_PTR_TYPE_OFFSET(&mask.sin_addr, addr_size - 1);
+    addr_ptr = UCS_PTR_BYTE_OFFSET(&mask.sin_addr, addr_size - 1);
     while ((addr_size > 0) && (*addr_ptr == 0)) {
         addr_size--;
         addr_ptr--;
     }
 
-    iface->addr_prefix_bits = (addr_size << 3) -
-                              ucs_count_trailing_zero_bits(*addr_ptr);
+    iface->addr_prefix_bits = (addr_size << 3);
+    if (addr_size > 0) {
+        iface->addr_prefix_bits -= ucs_count_trailing_zero_bits(*addr_ptr);
+    }
 
     return UCS_OK;
 }
