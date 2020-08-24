@@ -171,8 +171,9 @@ ucs_config_field_t uct_ib_iface_config_table[] = {
    "              by "UCS_DEFAULT_ENV_PREFIX UCT_IB_CONFIG_PREFIX"LID_PATH_BITS configuration.",
    ucs_offsetof(uct_ib_iface_config_t, num_paths), UCS_CONFIG_TYPE_ULUNITS},
 
-  {"ROUTE_BY_NETMASK", "n",
+  {"ROCE_LOCAL_SUBNET", "n",
    "Use the local IP address and subnet mask of each network device to route RoCEv2 packets.\n"
+   "If set to 'y', only addresses within the interface subnet will be assumed as reachable.\n"
    "If set to 'n', every remote RoCEv2 IP address is assumed to be reachable from any port.",
    ucs_offsetof(uct_ib_iface_config_t, rocev2_use_netmask), UCS_CONFIG_TYPE_BOOL},
 
@@ -563,11 +564,6 @@ static int uct_ib_iface_roce_is_reachable_via_routing(unsigned prefix_bits,
     uint8_t *local_addr;
     uint8_t *remote_addr;
     uint8_t mask;
-
-    /* If IB is configured to assume any RoCEv2 address is reachable - finish */
-    if (prefix_bits == 0) {
-        return 1;
-    }
 
     if (local_gid_info->roce_info.ver != UCT_IB_DEVICE_ROCE_V2) {
         return 1; /* We assume it is, but actually there's no good test */
@@ -1196,7 +1192,7 @@ ucs_status_t uct_ib_iface_init_roce_mask_info(uct_ib_iface_t *iface,
         return status;
     }
 
-    ucs_address_family_sizeof_ip(mask.sin_family, &addr_size);
+    ucs_sockaddr_inet_addr_size(mask.sin_family, &addr_size);
     addr_ptr = UCS_PTR_BYTE_OFFSET(&mask.sin_addr, addr_size - 1);
     while ((addr_size > 0) && (*addr_ptr == 0)) {
         addr_size--;

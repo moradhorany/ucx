@@ -815,7 +815,7 @@ static ucs_status_t ucs_sockaddr_ifreq(const char *if_name,
         return UCS_ERR_INVALID_ADDR;
     }
 
-    memcpy(dest, (struct sockaddr_in*)&ifr.ifr_addr, sizeof(*dest));
+    memcpy(dest, &ifr.ifr_addr, sizeof(*dest));
 
     return UCS_OK;
 }
@@ -830,7 +830,7 @@ ucs_status_t ucs_sockaddr_get_ifmask(const char *if_name, struct sockaddr_in *ma
     return ucs_sockaddr_ifreq(if_name, SIOCGIFNETMASK, mask);
 }
 
-ucs_status_t ucs_address_family_sizeof_ip(sa_family_t af, size_t *size_p)
+ucs_status_t ucs_sockaddr_inet_addr_size(sa_family_t af, size_t *size_p)
 {
     switch (af) {
     case AF_INET:

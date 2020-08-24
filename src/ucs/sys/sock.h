@@ -479,7 +479,7 @@ ucs_status_t ucs_sockaddr_get_ifmask(const char *if_name, struct sockaddr_in *ma
  *
  * @return UCS_OK on success or UCS_ERR_INVALID_PARAM on failure.
  */
-ucs_status_t ucs_address_family_sizeof_ip(sa_family_t af, size_t *size_p);
+ucs_status_t ucs_sockaddr_inet_addr_size(sa_family_t af, size_t *size_p);
 
 
 /**
