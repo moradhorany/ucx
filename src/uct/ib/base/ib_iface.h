@@ -607,8 +607,8 @@ static UCS_F_ALWAYS_INLINE
 size_t uct_ib_gid_offset_of_roce_v2_addr(sa_family_t af)
 {
     size_t addr_size;
-    ucs_sockaddr_inet_addr_size(af, &addr_size);
 
+    ucs_sockaddr_inet_addr_size(af, &addr_size);
     return sizeof(union ibv_gid) - addr_size;
 }
 

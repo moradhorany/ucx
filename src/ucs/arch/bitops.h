@@ -119,6 +119,84 @@ BEGIN_C_DECLS
 #define ucs_bitmap2idx(_map, _idx) \
     ucs_popcount((_map) & (UCS_MASK(_idx)))
 
+
+/**
+ * Count how many bits at the end of the buffer are equal to zero.
+ *
+ * @param [in] ptr         Pointer to the buffer.
+ * @param [in] bit_length  Total Buffer length (in bits).
+ *
+ * @return The number of trailing zero bits.
+ */
+static inline unsigned ucs_count_ptr_trailing_zero_bits(void *ptr,
+                                                        size_t bit_length)
+{
+    size_t  idx = bit_length;
+    uint8_t tmp = 0;
+
+    if (idx == 0) {
+        return 0;
+    }
+
+    /* Start from the end of the given buffer, with fractions of a bytes */
+    if ((idx % 8) != 0) {
+        tmp = *(uint8_t*)UCS_PTR_BYTE_OFFSET(ptr, idx / 8);
+        tmp &= ~UCS_MASK(8 - (idx % 8));
+        tmp |= UCS_BIT(idx);
+        if ((idx < 8) || (tmp != 0)) {
+            return __builtin_ctz(tmp | (((uint32_t)-1) << 8));
+        }
+    }
+
+    /* from now on - offsets are in bytes */
+    idx = (idx / 8) - 1;
+    while (((tmp = *(uint8_t*)UCS_PTR_BYTE_OFFSET(ptr, idx)) == 0) && (idx > 0)) {
+        idx--;
+    }
+
+    return bit_length - ((idx + 1) * 8) + __builtin_ctz(tmp | (((uint32_t)-1) << 8));
+}
+
+/**
+ * Check if two buffers are equal (for the given amount of bits).
+ *
+ * @param [in] ptr1        Pointer to the first buffer.
+ * @param [in] ptr2        Pointer to the second buffer.
+ * @param [in] bit_length  Buffer length (in bits).
+ *
+ * @return Whether the buffers are equal.
+ */
+static inline int ucs_bitwise_is_equal(void *ptr1, void *ptr2, size_t bit_length)
+{
+    size_t idx = 0;
+
+    /* Compare 64 bits at a time */
+    while (idx < (bit_length - (bit_length % (sizeof(uint64_t) * 8)))) {
+        if (*(uint64_t*)ptr1 != *(uint64_t*)ptr2) {
+            return 0;
+        }
+
+        ptr1 = UCS_PTR_BYTE_OFFSET(ptr1, sizeof(uint64_t));
+        ptr2 = UCS_PTR_BYTE_OFFSET(ptr2, sizeof(uint64_t));
+        idx += sizeof(uint64_t) * 8;
+    }
+
+    /* Compare 8 bits at a time */
+    while (idx < (bit_length - (bit_length % (sizeof(uint8_t) * 8)))) {
+        if (*(uint8_t*)ptr1 != *(uint8_t*)ptr2) {
+            return 0;
+        }
+
+        ptr1 = UCS_PTR_BYTE_OFFSET(ptr1, sizeof(uint8_t));
+        ptr2 = UCS_PTR_BYTE_OFFSET(ptr2, sizeof(uint8_t));
+        idx += sizeof(uint8_t) * 8;
+    }
+
+    /* Compare up to 7 last bits */
+    return ((*(uint8_t*)ptr1 & ~UCS_MASK(8 - (bit_length - idx))) ==
+            (*(uint8_t*)ptr2 & ~UCS_MASK(8 - (bit_length - idx))));
+}
+
 END_C_DECLS
 
 #endif

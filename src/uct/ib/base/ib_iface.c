@@ -173,7 +173,7 @@ ucs_config_field_t uct_ib_iface_config_table[] = {
 
   {"ROCE_LOCAL_SUBNET", "n",
    "Use the local IP address and subnet mask of each network device to route RoCEv2 packets.\n"
-   "If set to 'y', only addresses within the interface subnet will be assumed as reachable.\n"
+   "If set to 'y', only addresses within the interface's subnet will be assumed as reachable.\n"
    "If set to 'n', every remote RoCEv2 IP address is assumed to be reachable from any port.",
    ucs_offsetof(uct_ib_iface_config_t, rocev2_use_netmask), UCS_CONFIG_TYPE_BOOL},
 
@@ -555,39 +555,28 @@ ucs_status_t uct_ib_iface_get_device_address(uct_iface_h tl_iface,
     return UCS_OK;
 }
 
-static int uct_ib_iface_roce_is_reachable_via_routing(unsigned prefix_bits,
-        const uct_ib_device_gid_info_t *local_gid_info,
-        const uct_ib_address_t *remote_ib_addr)
+static int
+uct_ib_iface_roce_is_reachable_via_routing(unsigned prefix_bits,
+                                           const uct_ib_device_gid_info_t *local_gid_info,
+                                           const uct_ib_address_t *remote_ib_addr)
 {
     sa_family_t addr_family;
-    size_t addr_size;
+    size_t addr_offset;
     uint8_t *local_addr;
     uint8_t *remote_addr;
-    uint8_t mask;
 
     if (local_gid_info->roce_info.ver != UCT_IB_DEVICE_ROCE_V2) {
         return 1; /* We assume it is, but actually there's no good test */
     }
 
     addr_family = local_gid_info->roce_info.addr_family;
-    addr_size   = uct_ib_gid_offset_of_roce_v2_addr(addr_family);
-    local_addr  = UCS_PTR_BYTE_OFFSET(&local_gid_info->gid, addr_size);
-    remote_addr = UCS_PTR_BYTE_OFFSET(&remote_ib_addr->flags + 1, addr_size);
+    addr_offset = uct_ib_gid_offset_of_roce_v2_addr(addr_family);
+    local_addr  = UCS_PTR_BYTE_OFFSET(&local_gid_info->gid, addr_offset);
+    remote_addr = UCS_PTR_BYTE_OFFSET(&remote_ib_addr->flags + 1, addr_offset);
 
-    ucs_assert((prefix_bits >> 3) <= addr_size);
-    if (memcmp(local_addr, remote_addr, prefix_bits >> 3)) {
-        return 0;
-    }
+    ucs_assert((prefix_bits / 8) <= addr_offset);
 
-    /* Convert the last few bits of the prefix into a mask. For example, if the
-     * prefix_length is 18, the memcmp() call would compare the first 2 bytes,
-     * and now the mask on the next byte needs to be: 11000000 */
-    mask = ~UCS_MASK(8 - (prefix_bits & UCS_MASK(3)));
-
-    local_addr  += addr_size;
-    remote_addr += addr_size;
-
-    return ((*local_addr & mask) == (*remote_addr & mask));
+    return ucs_bitwise_is_equal(local_addr, remote_addr, prefix_bits);
 }
 
 static int uct_ib_iface_roce_is_reachable(const uct_ib_device_gid_info_t *local_gid_info,
@@ -1165,14 +1154,13 @@ ucs_status_t uct_ib_iface_init_roce_gid_info(uct_ib_iface_t *iface,
 ucs_status_t uct_ib_iface_init_roce_mask_info(uct_ib_iface_t *iface,
                                               size_t md_config_index)
 {
+    uct_ib_device_t *dev = uct_ib_iface_device(iface);
+    uint8_t port_num     = iface->config.port_num;
+
     struct sockaddr_in mask;
     char ndev_name[IFNAMSIZ];
     ucs_status_t status;
-    uint8_t *addr_ptr;
     size_t addr_size;
-
-    uct_ib_device_t *dev = uct_ib_iface_device(iface);
-    uint8_t port_num     = iface->config.port_num;
 
     ucs_assert(uct_ib_iface_is_roce(iface));
 
@@ -1193,16 +1181,9 @@ ucs_status_t uct_ib_iface_init_roce_mask_info(uct_ib_iface_t *iface,
     }
 
     ucs_sockaddr_inet_addr_size(mask.sin_family, &addr_size);
-    addr_ptr = UCS_PTR_BYTE_OFFSET(&mask.sin_addr, addr_size - 1);
-    while ((addr_size > 0) && (*addr_ptr == 0)) {
-        addr_size--;
-        addr_ptr--;
-    }
 
-    iface->addr_prefix_bits = (addr_size << 3);
-    if (addr_size > 0) {
-        iface->addr_prefix_bits -= ucs_count_trailing_zero_bits(*addr_ptr);
-    }
+    iface->addr_prefix_bits = (addr_size * 8) -
+            ucs_count_ptr_trailing_zero_bits(&mask.sin_addr, addr_size * 8);
 
     return UCS_OK;
 }
