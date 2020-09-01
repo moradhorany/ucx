@@ -129,10 +129,10 @@ BEGIN_C_DECLS
  * @return The number of trailing zero bits.
  */
 static inline unsigned ucs_count_ptr_trailing_zero_bits(void *ptr,
-                                                        size_t bit_length)
+                                                        uint64_t bit_length)
 {
-    size_t  idx = bit_length;
-    uint8_t tmp = 0;
+    uint64_t idx = bit_length;
+    uint8_t  tmp = 0;
 
     if (idx == 0) {
         return 0;
@@ -166,9 +166,9 @@ static inline unsigned ucs_count_ptr_trailing_zero_bits(void *ptr,
  *
  * @return Whether the buffers are equal.
  */
-static inline int ucs_bitwise_is_equal(void *ptr1, void *ptr2, size_t bit_length)
+static inline int ucs_bitwise_is_equal(void *ptr1, void *ptr2, uint64_t bit_length)
 {
-    size_t idx = 0;
+    uint64_t idx = 0;
 
     /* Compare 64 bits at a time */
     while (idx < (bit_length - (bit_length % (sizeof(uint64_t) * 8)))) {
