@@ -142,7 +142,9 @@ static inline unsigned ucs_count_ptr_trailing_zero_bits(void *ptr,
     if ((idx % 8) != 0) {
         tmp = *(uint8_t*)UCS_PTR_BYTE_OFFSET(ptr, idx / 8);
         tmp &= ~UCS_MASK(8 - (idx % 8));
-        tmp |= UCS_BIT(idx);
+        if (idx < 8) {
+            tmp |= UCS_BIT(idx % 8);
+        }
         if ((idx < 8) || (tmp != 0)) {
             return __builtin_ctz(tmp | (((uint32_t)-1) << 8));
         }
