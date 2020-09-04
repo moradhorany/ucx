@@ -310,9 +310,8 @@ ucs_status_t ucs_async_dispatch_timerq(ucs_timer_queue_t *timerq,
     expired_timers = ucs_alloca(max_timers * sizeof(*expired_timers));
 
     ucs_timerq_for_each_expired(timer, timerq, current_time, {
-        expired_timers[num_timers++] = timer->id + UCS_ASYNC_TIMER_ID_MIN;
-        if (num_timers >= max_timers) {
-            break; /* Keep timers which we don't have room for in the queue */
+        if (ucs_likely(num_timers < max_timers)) {
+            expired_timers[num_timers++] = timer->id + UCS_ASYNC_TIMER_ID_MIN;
         }
     })
 
