@@ -17,15 +17,16 @@
 /* Async event handler */
 typedef struct ucs_async_handler ucs_async_handler_t;
 struct ucs_async_handler {
-    int                        id;      /* Event/Timer ID */
-    ucs_async_mode_t           mode;    /* Event delivery mode */
-    int                        events;  /* Bitmap of events */
-    pthread_t                  caller;  /* Thread which invokes the callback */
-    ucs_async_event_cb_t       cb;      /* Callback function */
-    void                       *arg;    /* Callback argument */
-    ucs_async_context_t        *async;  /* Async context for the handler. Can be NULL */
-    volatile uint32_t          missed;  /* Protect against adding to miss queue multiple times */
-    volatile uint32_t          refcount;
+    int                        id;       /* Unique handler ID */
+    int                        timer_id; /* Timer ID (unused for events) */
+    ucs_async_mode_t           mode;     /* Event delivery mode */
+    int                        events;   /* Bitmap of events */
+    pthread_t                  caller;   /* Thread which invokes the callback */
+    ucs_async_event_cb_t       cb;       /* Callback function */
+    void                       *arg;     /* Callback argument */
+    ucs_async_context_t        *async;   /* Async context for the handler. Can be NULL */
+    volatile uint32_t          missed;   /* Protect against adding to miss queue multiple times */
+    volatile uint32_t          refcount; /* Counts references for destroy flow */
 };
 
 

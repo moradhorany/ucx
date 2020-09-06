@@ -57,7 +57,7 @@ void ucs_timerq_cleanup(ucs_timer_queue_t *timerq);
  * @param timer_id_p Filled with the ID of the new timer in the queue.
  */
 ucs_status_t ucs_timerq_add(ucs_timer_queue_t *timerq,
-                        ucs_time_t interval, int *timer_id_p);
+                            ucs_time_t interval, int *timer_id_p);
 
 /**
  * Remove a timer.

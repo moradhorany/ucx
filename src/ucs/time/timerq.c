@@ -67,7 +67,7 @@ ucs_status_t ucs_timerq_add(ucs_timer_queue_t *timerq, ucs_time_t interval,
 
     ptr->expiration = 0; /* will fire the next time sweep is called */
     ptr->interval   = interval;
-    index = ucs_ptr_array_locked_insert(&timerq->timers, (void *)ptr);
+    index           = ucs_ptr_array_locked_insert(&timerq->timers, (void *)ptr);
     /*
      * TODO: At the moment ucs_ptr_array_locked_insert can't fail, since
      * it returns the index of the new element and the index is unsigned.
@@ -86,10 +86,11 @@ out_unlock:
 
 ucs_status_t ucs_timerq_remove(ucs_timer_queue_t *timerq, int timer_id)
 {
-    ucs_status_t status;
     ucs_timer_t *timer = NULL;
+    int _index         = 0;
+
+    ucs_status_t status;
     void *ptr;
-    int _index = 0;
 
     ucs_trace_func("timerq=%p timer_id=%d", timerq, timer_id);
 
