@@ -193,27 +193,30 @@ static void ucs_async_handler_put(ucs_async_handler_t *handler)
  */
 static ucs_status_t ucs_async_handler_add(ucs_async_handler_t *handler)
 {
-    khiter_t hash_it = 0;
+    int is_handler_id_set = handler->id >= 0;
+    int hash_extra_status = UCS_KH_PUT_KEY_PRESENT;
     ucs_async_handler_t *handler_from_hash;
-    int hash_extra_status;
     ucs_status_t status;
-    int id;
+    khiter_t hash_it;
 
     pthread_rwlock_wrlock(&ucs_async_global_context.handlers_lock);
 
     ucs_assert_always(handler->refcount == 1);
 
-    while (handler->id < 0) {
-        /* ucs_async_global_context.handler_id is used for unique keys */
-        id = ucs_atomic_fadd32(&ucs_async_global_context.handler_id, 1);
-        if (ucs_unlikely(id == 0)) {
-            ucs_atomic_fadd32(&ucs_async_global_context.handler_id,
-                              UCS_ASYNC_TIMER_ID_MIN);
-            continue;
+    do {
+        if (!is_handler_id_set) {
+            /* ucs_async_global_context.handler_id is used for unique keys */
+            handler->id = ucs_atomic_fadd32(&ucs_async_global_context.handler_id,
+                                            1);
+            if (ucs_unlikely(handler->id == 0)) {
+                ucs_atomic_fadd32(&ucs_async_global_context.handler_id,
+                                  UCS_ASYNC_TIMER_ID_MIN);
+                continue;
+            }
         }
 
         hash_it = kh_put(ucs_async_handler, &ucs_async_global_context.handlers,
-                         id, &hash_extra_status);
+                         handler->id, &hash_extra_status);
         if (hash_extra_status == UCS_KH_PUT_FAILED) {
             ucs_error("Failed to add async handler " UCS_ASYNC_HANDLER_FMT
                       " to hash", UCS_ASYNC_HANDLER_ARG(handler));
@@ -224,13 +227,11 @@ static ucs_status_t ucs_async_handler_add(ucs_async_handler_t *handler)
                                          hash_it);
             ucs_trace("async handler %s() uses id %d,"
                       " new async handler %s couldn't use this id",
-                      ucs_debug_get_symbol_name(handler_from_hash->cb), id,
+                      ucs_debug_get_symbol_name(handler_from_hash->cb),
+                      handler->id,
                       ucs_debug_get_symbol_name(handler->cb));
-        } else {
-            handler->id = id;
-            ucs_assert(id != -1);
         }
-    }
+    } while (hash_extra_status == UCS_KH_PUT_KEY_PRESENT);
 
 
     ucs_assert_always(!ucs_async_handler_kh_is_end(hash_it));
