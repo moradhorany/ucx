@@ -54,7 +54,7 @@ typedef struct ucs_async_global_context {
 
 static ucs_async_global_context_t ucs_async_global_context = {
     .handlers_lock   = PTHREAD_RWLOCK_INITIALIZER,
-    .handler_id      = UCS_ASYNC_TIMER_ID_MIN - 1
+    .handler_id      = UCS_ASYNC_TIMER_ID_MIN
 };
 
 
@@ -332,7 +332,7 @@ ucs_status_t ucs_async_dispatch_timerq(ucs_timer_queue_t *timerq,
 
     ucs_timerq_for_each_expired(timer, timerq, current_time, {
         if (ucs_likely(num_timers < max_timers)) {
-            expired_timers[num_timers++] = timer->id + UCS_ASYNC_TIMER_ID_MIN;
+            expired_timers[num_timers++] = timer->id;
         }
     })
 
@@ -531,7 +531,7 @@ ucs_status_t ucs_async_add_timer(ucs_async_mode_t mode, ucs_time_t interval,
         goto err;
     }
 
-    status = ucs_async_method_call(mode, add_timer, async, interval, timer_id);
+    status = ucs_async_method_call(mode, add_timer, async, interval, handler_id);
     if (status != UCS_OK) {
         goto err_destroy_handler;
     }
