@@ -128,8 +128,8 @@ BEGIN_C_DECLS
  *
  * @return The number of trailing zero bits.
  */
-static inline unsigned ucs_count_ptr_trailing_zero_bits(void *ptr,
-                                                        uint64_t bit_length)
+static inline unsigned
+ucs_count_ptr_trailing_zero_bits(void *ptr, uint64_t bit_length)
 {
     uint64_t idx = bit_length;
     uint8_t  tmp = 0;
@@ -168,35 +168,18 @@ static inline unsigned ucs_count_ptr_trailing_zero_bits(void *ptr,
  *
  * @return Whether the buffers are equal.
  */
-static inline int ucs_bitwise_is_equal(void *ptr1, void *ptr2, uint64_t bit_length)
+static inline int ucs_bitwise_is_equal(const void *ptr1, const void *ptr2, uint64_t bit_length)
 {
-    uint64_t idx = 0;
+    size_t length      = bit_length / 8;
+    unsigned remainder = bit_length % 8;
 
-    /* Compare 64 bits at a time */
-    while (idx < (bit_length - (bit_length % (sizeof(uint64_t) * 8)))) {
-        if (*(uint64_t*)ptr1 != *(uint64_t*)ptr2) {
-            return 0;
-        }
-
-        ptr1 = UCS_PTR_BYTE_OFFSET(ptr1, sizeof(uint64_t));
-        ptr2 = UCS_PTR_BYTE_OFFSET(ptr2, sizeof(uint64_t));
-        idx += sizeof(uint64_t) * 8;
-    }
-
-    /* Compare 8 bits at a time */
-    while (idx < (bit_length - (bit_length % (sizeof(uint8_t) * 8)))) {
-        if (*(uint8_t*)ptr1 != *(uint8_t*)ptr2) {
-            return 0;
-        }
-
-        ptr1 = UCS_PTR_BYTE_OFFSET(ptr1, sizeof(uint8_t));
-        ptr2 = UCS_PTR_BYTE_OFFSET(ptr2, sizeof(uint8_t));
-        idx += sizeof(uint8_t) * 8;
+    if (memcmp(ptr1, ptr2, length) != 0) {
+        return 0;
     }
 
     /* Compare up to 7 last bits */
-    return ((*(uint8_t*)ptr1 & ~UCS_MASK(8 - (bit_length - idx))) ==
-            (*(uint8_t*)ptr2 & ~UCS_MASK(8 - (bit_length - idx))));
+    return ((*((uint8_t*)ptr1 + length) & ~UCS_MASK(8 - remainder)) ==
+            (*((uint8_t*)ptr2 + length) & ~UCS_MASK(8 - remainder)));
 }
 
 END_C_DECLS
