@@ -9,6 +9,7 @@
 
 #include <ucs/sys/compiler_def.h>
 #include <stdint.h>
+#include <string.h>
 
 BEGIN_C_DECLS
 
