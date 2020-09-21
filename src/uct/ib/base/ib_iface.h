@@ -25,6 +25,8 @@
 #define UCT_IB_ADDRESS_INVALID_PKEY        0
 #define UCT_IB_ADDRESS_DEFAULT_PKEY        0xffff
 
+#define MCG_GID {0xFF,0x1,0,0,0,0,0,0,0x1e,0x34,0,0,0,0,0,0}
+
 /* Forward declarations */
 typedef struct uct_ib_iface_config   uct_ib_iface_config_t;
 typedef struct uct_ib_iface_ops      uct_ib_iface_ops_t;

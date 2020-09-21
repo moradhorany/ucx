@@ -38,7 +38,7 @@ ucs_status_t uct_ud_mlx5_iface_get_av(uct_ib_iface_t *iface,
                                       unsigned path_index,
                                       uct_ib_mlx5_base_av_t *base_av,
                                       struct mlx5_grh_av *grh_av,
-                                      int *is_global)
+                                      int *is_global, uint32_t actual_qp_num)
 {
     ucs_status_t        status;
     struct ibv_ah      *ah;
@@ -48,6 +48,16 @@ ucs_status_t uct_ud_mlx5_iface_get_av(uct_ib_iface_t *iface,
 
     uct_ib_iface_fill_ah_attr_from_addr(iface, ib_addr, path_index, &ah_attr,
                                         &path_mtu);
+    union ibv_gid mgid;
+    uint8_t mcg_gid[16] = MCG_GID;
+    mcg_gid[6] = actual_qp_num & 0xFF;
+    memcpy(mgid.raw,mcg_gid,16);
+    char p[128];
+
+    ucs_debug("**************************************************** 0x%x", actual_qp_num);
+    ucs_debug("mcast gid is in unpack_peer_address: %s", uct_ib_gid_str(&mgid, p, sizeof(p)));
+    ah_attr.grh.dgid = mgid;
+
     status = uct_ib_iface_create_ah(iface, &ah_attr, &ah);
     if (status != UCS_OK) {
         return status;

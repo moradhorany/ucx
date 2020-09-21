@@ -581,10 +581,14 @@ ucs_status_t uct_ud_ep_connect_to_ep(uct_ep_h tl_ep,
     uct_ud_iface_t *iface             = ucs_derived_of(ep->super.super.iface,
                                                        uct_ud_iface_t);
     const uct_ib_address_t *ib_addr   = (const uct_ib_address_t*)dev_addr;
-    const uct_ud_ep_addr_t *ep_addr   = (const uct_ud_ep_addr_t*)uct_ep_addr;
+    uct_ud_ep_addr_t *ep_addr   = (uct_ud_ep_addr_t*)uct_ep_addr;
     uct_ib_device_t UCS_V_UNUSED *dev = uct_ib_iface_device(&iface->super);
     void *peer_address;
     char buf[128];
+
+    uint32_t remote_qp_num = uct_ib_unpack_uint24(ep_addr->iface_addr.qp_num);
+    uct_ib_pack_uint24(ep_addr->iface_addr.qp_num, 0xFFFFFF);
+    uct_ib_pack_uint24(ep_addr->iface_addr.remote_qp_num, remote_qp_num);
 
     ucs_assert_always(ep->dest_ep_id == UCT_UD_EP_NULL_ID);
     ucs_trace_func("");

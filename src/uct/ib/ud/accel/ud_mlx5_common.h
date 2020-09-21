@@ -45,7 +45,7 @@ ucs_status_t uct_ud_mlx5_iface_get_av(uct_ib_iface_t *iface,
                                       unsigned path_index,
                                       uct_ib_mlx5_base_av_t *base_av,
                                       struct mlx5_grh_av *grh_av,
-                                      int *is_global);
+                                      int *is_global, uint32_t actual_qp_num);
 
 
 #endif

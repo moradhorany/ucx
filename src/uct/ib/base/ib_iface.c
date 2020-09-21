@@ -919,6 +919,20 @@ ucs_status_t uct_ib_iface_create_qp(uct_ib_iface_t *iface,
     attr->cap  = attr->ibv.cap;
     *qp_p      = qp;
 
+    union ibv_gid mgid;
+    uint8_t mcg_gid[16] = MCG_GID;
+    mcg_gid[6] = qp->qp_num & 0xFF;
+    memcpy(mgid.raw,mcg_gid,16);
+    char p[128];
+    ucs_debug("mcast gid is %s", uct_ib_gid_str(&mgid, p, sizeof(p)));
+    int ret = ibv_attach_mcast(qp, &mgid, 0);
+    if (ret) {
+        ucs_debug("ibv_attach_mcast failed %d.", ret);
+        return UCS_ERR_INVALID_PARAM;
+    }
+    sleep(1);
+    ucs_debug("ibv_attach_mcast success.");
+
     ucs_debug("iface=%p: created %s QP 0x%x on %s:%d "
               "TX wr:%d sge:%d inl:%d resp:%d RX wr:%d sge:%d resp:%d",
               iface, uct_ib_qp_type_str(attr->qp_type), qp->qp_num,
